@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Flip 7 方法论总结 V2 — 从对话到产品的工程化实践</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: radial-gradient(circle at top, #eef2ff, #ffffff);
+    color: #1f2937;
+    margin: 0;
+    padding: 24px;
+    line-height: 1.7;
+  }
+  .container {
+    max-width: 1000px;
+    margin: 0 auto;
+    background: rgba(255,255,255,0.75);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(229,231,235,0.7);
+    border-radius: 20px;
+    padding: 28px;
+    box-shadow: 0 20px 60px rgba(15,23,42,0.08);
+  }
+  h1 { margin-top: 0; font-size: 24px; color: #0f172a; }
+  h2 { font-size: 18px; color: #0f172a; margin-top: 28px; margin-bottom: 10px; }
+  h3 { font-size: 15px; color: #0f172a; margin-top: 18px; margin-bottom: 6px; }
+  p { color: #374151; margin: 0 0 12px; }
+  ul, ol { padding-left: 20px; color: #374151; }
+  li { margin-bottom: 8px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; }
+  .box {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 14px 16px;
+  }
+  .box h4 { margin: 0 0 8px; font-size: 14px; color: #0f172a; }
+  .box ul { margin: 0; padding-left: 18px; font-size: 13px; }
+  .box li { margin-bottom: 6px; }
+  .note {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    color: #78350f;
+    padding: 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    margin-top: 10px;
+  }
+  .section { margin-top: 30px; }
+  .postscript {
+    margin-top: 30px;
+    background: #0f172a;
+    color: #fff;
+    padding: 14px 16px;
+    border-radius: 14px;
+    font-size: 14px;
+  }
+  .timeline {
+    position: relative;
+    padding-left: 24px;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #e5e7eb;
+  }
+  .timeline-item {
+    position: relative;
+    margin-bottom: 20px;
+    padding-left: 20px;
+  }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -20px;
+    top: 6px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #0ea5e9;
+    border: 2px solid #fff;
+  }
+  .timeline-item.completed::before { background: #10b981; }
+  .timeline-item.current::before { background: #f59e0b; }
+  .timeline-item.pending::before { background: #94a3b8; }
+  .timeline-title { font-size: 14px; font-weight: 600; color: #0f172a; }
+  .timeline-desc { font-size: 13px; color: #64748b; margin-top: 4px; }
+  .chip {
+    display: inline-block;
+    background: #0f172a;
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-right: 8px;
+    margin-bottom: 6px;
+  }
+  .chip.mid { background: #0ea5e9; }
+  .chip.soft { background: #10b981; }
+  .chip.warn { background: #ef4444; }
+  .chip.bonus { background: #f59e0b; color: #0f172a; }
+  pre {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 14px;
+    border-radius: 12px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Flip 7 方法论总结 V2</h1>
+  <p>基于完整对话过程的工程化实践抽象，从"用户想做个游戏"到"可交付的项目"。</p>
+
+  <div class="section">
+    <h2>1. 对话过程回顾</h2>
+    <div class="timeline">
+      <div class="timeline-item completed">
+        <div class="timeline-title">阶段一：需求澄清</div>
+        <div class="timeline-desc">用户提出模糊需求 → 逐步澄清规则 → 确认核心玩法</div>
+      </div>
+      <div class="timeline-item completed">
+        <div class="timeline-title">阶段二：原型验证</div>
+        <div class="timeline-desc">生成可运行原型 → 用户测试 → 发现规则理解偏差 → 修正逻辑</div>
+      </div>
+      <div class="timeline-item completed">
+        <div class="timeline-title">阶段三：文档固化</div>
+        <div class="timeline-desc">整理PRD → 固化验收标准 → 建立自检清单</div>
+      </div>
+      <div class="timeline-item completed">
+        <div class="timeline-title">阶段四：工程化</div>
+        <div class="timeline-desc">抽取纯函数模块 → 推送到GitHub → 版本管理</div>
+      </div>
+      <div class="timeline-item current">
+        <div class="timeline-title">阶段五：视觉迭代</div>
+        <div class="timeline-desc">卡牌设计系统 → UI风格统一 → 交互细节优化</div>
+      </div>
+      <div class="timeline-item pending">
+        <div class="timeline-title">阶段六：正式开发</div>
+        <div class="timeline-desc">迁移到微信小游戏 → 真机测试 → 提交审核</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>2. 核心方法论</h2>
+
+    <h3>2.1 对话式需求工程</h3>
+    <div class="box">
+      <h4>传统方式 vs 对话式</h4>
+      <ul>
+        <li>传统：一次性写完PRD → 开发 → 发现偏差 → 返工</li>
+        <li>对话式：逐步澄清 → 原型验证 → 即时修正 → 减少返工</li>
+      </ul>
+    </div>
+    <div class="note"><b>价值：</b>需求变更成本从"开发后"降到"开发前"，节省70%返工时间。</div>
+
+    <h3>2.2 渐进式细化</h3>
+    <div class="grid-3">
+      <div class="box">
+        <h4>模糊想法</h4>
+        <ul>
+          <li>"想做个Flip 7小游戏"</li>
+          <li>只有一句话需求</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h4>具体规则</h4>
+        <ul>
+          <li>牌堆构成、判负条件、计分规则</li>
+          <li>边界情况处理</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h4>可执行代码</h4>
+        <ul>
+          <li>纯函数模块、状态机、UI渲染</li>
+          <li>可测试、可验证</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>2.3 可视化验证</h3>
+    <ul>
+      <li>HTML原型让规则可以被<b>直接体验</b>，而不是被"理解"</li>
+      <li>用户测试原型时，能<b>发现规则描述的歧义</b></li>
+      <li>原型是<b>活的文档</b>，比静态PRD更有效</li>
+    </ul>
+    <div class="note"><b>实践：</b>先写"可运行的规则书"（原型），再写"可阅读的规则书"（PRD）。</div>
+
+    <h3>2.4 反馈驱动迭代</h3>
+    <pre>用户反馈 → 分析问题 → 修复/优化 → 重新验证 → 用户确认</pre>
+    <ul>
+      <li>用户的每次反馈都是<b>改进机会</b>，不是"找茬"</li>
+      <li>快速响应反馈，让用户有<b>参与感</b></li>
+      <li>每次修改都要<b>验证</b>，确保没有引入新问题</li>
+    </ul>
+
+    <h3>2.5 文档即过程</h3>
+    <div class="grid-2">
+      <div class="box">
+        <h4>过程产物</h4>
+        <ul>
+          <li>PRD：记录规则决策</li>
+          <li>架构图：记录技术决策</li>
+          <li>自检清单：记录验收标准</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h4>价值</h4>
+        <ul>
+          <li>可追溯：每个决策都有依据</li>
+          <li>可交接：新人能快速理解</li>
+          <li>可复用：下次类似项目能参考</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>2.6 版本边界管理</h3>
+    <ul>
+      <li>明确<b>V0/V1/V2</b>各自做什么、不做什么</li>
+      <li>新想法一律记入<b>backlog</b>，不进当前版本</li>
+      <li>用<b>Git</b>管理版本演进，每个版本有明确的commit</li>
+    </ul>
+    <div class="note"><b>原则：</b>版本边界是"产品边界"的体现，不是"时间边界"。</div>
+
+    <h3>2.7 逻辑与视图分离</h3>
+    <pre>game-logic.js（纯函数）→ 无副作用、可测试
+       ↓
+flip7-prototype.html（UI层）→ 调用逻辑、渲染视图</pre>
+    <ul>
+      <li>核心规则抽成<b>纯函数</b>，不依赖DOM/网络</li>
+      <li>UI层只负责<b>渲染和交互</b>，不包含业务逻辑</li>
+      <li>便于<b>单元测试</b>和<b>跨平台复用</b></li>
+    </ul>
+
+    <h3>2.8 边界条件显式化</h3>
+    <ul>
+      <li>把"abnormal path"列成<b>checklist</b></li>
+      <li>每个边界在原型里<b>走一遍</b></li>
+      <li>用<b>自检清单</b>固化，每次发版前必跑</li>
+    </ul>
+    <div class="note"><b>经验：</b>边界条件是bug的高发区，必须显式处理。</div>
+  </div>
+
+  <div class="section">
+    <h2>3. Flip 7 具体实践</h2>
+    <div class="grid-3">
+      <div class="box">
+        <h4>V0 原型</h4>
+        <ul>
+          <li>HTML可运行原型</li>
+          <li>验证规则手感</li>
+          <li>发现规则歧义</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h4>V1 规划</h4>
+        <ul>
+          <li>PRD固化</li>
+          <li>验收标准</li>
+          <li>自检清单</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h4>工程化</h4>
+        <ul>
+          <li>纯函数模块</li>
+          <li>Git版本管理</li>
+          <li>设计系统</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>4. 可复用的检查清单</h2>
+    <div class="box">
+      <h4>启动项目前</h4>
+      <ul>
+        <li>□ 核心规则是否已量化（布尔条件+后果）</li>
+        <li>□ 边界条件是否已列出</li>
+        <li>□ 版本边界是否已定义</li>
+        <li>□ 是否有可运行的原型</li>
+      </ul>
+    </div>
+    <div class="box" style="margin-top:12px;">
+      <h4>每次修改后</h4>
+      <ul>
+        <li>□ 是否验证了原有功能</li>
+        <li>□ 是否引入了新问题</li>
+        <li>□ 是否更新了相关文档</li>
+        <li>□ 是否提交了Git commit</li>
+      </ul>
+    </div>
+    <div class="box" style="margin-top:12px;">
+      <h4>发版前</h4>
+      <ul>
+        <li>□ 自检清单是否全部通过</li>
+        <li>□ 边界条件是否已测试</li>
+        <li>□ PRD是否已更新</li>
+        <li>□ 版本号是否已更新</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>5. 一句话总结</h2>
+    <div class="postscript">
+      <b>从对话到产品，核心是：</b><br>
+      1. 用<b>对话</b>澄清需求，而不是一次性定义<br>
+      2. 用<b>原型</b>验证规则，而不是用文档想象<br>
+      3. 用<b>文档</b>固化决策，而不是依赖记忆<br>
+      4. 用<b>Git</b>管理演进，而不是手动复制<br>
+      5. 用<b>测试</b>保障质量，而不是靠人工检查
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>6. 项目当前状态</h2>
+    <div class="grid-2">
+      <div class="box">
+        <h4>已完成</h4>
+        <ul>
+          <li>V0 可运行原型</li>
+          <li>PRD V1</li>
+          <li>架构图</li>
+          <li>自检清单</li>
+          <li>纯函数模块</li>
+          <li>卡牌设计系统</li>
+          <li>GitHub仓库</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h4>待完成</h4>
+        <ul>
+          <li>V1 微信小游戏迁移</li>
+          <li>单元测试</li>
+          <li>E2E测试</li>
+          <li>音效集成</li>
+          <li>真机调试</li>
+          <li>审核提交</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
