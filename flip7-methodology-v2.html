@@ -138,10 +138,6 @@
         <div class="timeline-title">阶段三：文档固化</div>
         <div class="timeline-desc">整理PRD → 固化验收标准 → 建立自检清单</div>
       </div>
-      <div class="timeline-item completed">
-        <div class="timeline-title">阶段四：工程化</div>
-        <div class="timeline-desc">抽取纯函数模块 → 推送到GitHub → 版本管理</div>
-      </div>
       <div class="timeline-item current">
         <div class="timeline-title">阶段五：视觉迭代</div>
         <div class="timeline-desc">卡牌设计系统 → UI风格统一 → 交互细节优化</div>
@@ -236,13 +232,11 @@
     <div class="note"><b>原则：</b>版本边界是"产品边界"的体现，不是"时间边界"。</div>
 
     <h3>2.7 逻辑与视图分离</h3>
-    <pre>game-logic.js（纯函数）→ 无副作用、可测试
-       ↓
-flip7-prototype.html（UI层）→ 调用逻辑、渲染视图</pre>
+    <pre>flip7-v05.html（逻辑 + 视图内联）→ 单文件自包含原型</pre>
     <ul>
-      <li>核心规则抽成<b>纯函数</b>，不依赖DOM/网络</li>
-      <li>UI层只负责<b>渲染和交互</b>，不包含业务逻辑</li>
-      <li>便于<b>单元测试</b>和<b>跨平台复用</b></li>
+      <li>核心规则因模块未成功集成，目前与 UI <b>同文件</b>维护</li>
+      <li>适用于<b>单页原型/小项目</b>，便于快速迭代和分享</li>
+      <li>后续若迁移微信小游戏，再抽离成<b>独立逻辑层</b></li>
     </ul>
 
     <h3>2.8 边界条件显式化</h3>
@@ -337,7 +331,6 @@ flip7-prototype.html（UI层）→ 调用逻辑、渲染视图</pre>
           <li>PRD V1</li>
           <li>架构图</li>
           <li>自检清单</li>
-          <li>纯函数模块</li>
           <li>卡牌设计系统</li>
           <li>GitHub仓库</li>
         </ul>

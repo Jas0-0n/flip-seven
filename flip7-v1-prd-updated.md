@@ -1,8 +1,8 @@
 # Flip 7 — 产品需求文档（PRD）
 
-**版本：** V0.5（增强原型）  
-**更新日期：** 2026-07-03  
-**状态：** 已立项 / 原型已验证  
+**版本：** V0.5（增强原型）
+**更新日期：** 2026-07-04
+**状态：** 已立项 / 原型已验证
 **目标平台：** 微信小游戏（MVP 阶段可先以 H5 原型验证）
 
 ---
@@ -111,9 +111,9 @@
 - 下一轮由 **触发者继续先手**
 
 ### 4.5 判负处理
-- 翻到重复牌后，不自动结束回合
-- 玩家需手动点击 **结束回合** 确认
-- 确认后，手牌归 0、回合切换给对手
+- 翻到重复牌后，**立即自动判负**
+- 手牌全部移入 `discard`，本轮得分归 0
+- 自动切换玩家继续本轮；若全部判负则直接开始新一轮
 
 ---
 
@@ -157,11 +157,11 @@
 
 ### 7.1 卡牌对象
 ```javascript
-// 数字牌
-{ type: 'number', value: 12, id: 'n0' }
+// 数字牌（value 为牌面值 0~12）
+{ type: 'number', value: 5, id: 'n1' }
 
-// 特殊牌
-{ type: 'special', value: '+2', effect: 2, id: 'sp2' }
+// 特殊牌（effect 为效果值或 'double'）
+{ type: 'special', value: '+4', effect: 4, id: 'sp4' }
 { type: 'special', value: 'x2', effect: 'double', id: 'spx2' }
 ```
 
@@ -169,18 +169,19 @@
 ```javascript
 {
   players: [
-    { id, hand: [], score: 0 },
-    { id, hand: [], score: 0 }
+    { id: 1, hand: [], score: 0 },
+    { id: 2, hand: [], score: 0 }
   ],
-  currentPlayer: 1,       // 当前操作玩家
-  state: 'waiting',       // ready | waiting | playing | flip7 | bust | ended
-  deck: [],               // 牌堆（未翻开的牌）
-  discard: [],            // 弃牌堆
-  flippedCard: null,       // 当前翻出的牌
-  roundNumber: 1,         // 当前回合数
-  totalFlipsThisRound: 0,  // 本回合已翻牌次数
-  history: [],            // 翻牌记录
-  flipAnimating: false    // 翻牌动画锁
+  currentPlayer: 1,          // 1 或 2
+  state: 'waiting',          // waiting | playing | ended
+  deck: [],                  // 牌堆（未翻开的牌）
+  discard: [],               // 弃牌堆
+  roundNumber: 1,            // 当前回合数
+  totalFlipsThisRound: 0,    // 本回合已翻牌次数
+  history: [],               // 翻牌记录
+  flipAnimating: false,      // 翻牌动画锁
+  playerOut: [false, false], // 两位玩家是否已出局
+  firstOut: null             // 本轮第一个判负的玩家编号
 }
 ```
 
@@ -251,6 +252,5 @@
 |------|------|
 | `flip7-v05.html` | 可运行原型（H5，自包含） |
 | `flip7-v1-prd-updated.md` | 本文档（PRD） |
-| `src/flip7-logic.js` | 核心纯函数逻辑模块 |
 | `flip7-methodology-v2.html` | 工程方法论总结 |
 | `.gitignore` | Git 忽略规则 |
