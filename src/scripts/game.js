@@ -169,7 +169,7 @@ export function afterFlip(state, card, playerIdx, ui) {
   player.hand.push(card);
 
   // --- FLIP 7 CHECK: 7 cards → both out, round ends ---
-  if (player.hand.length >= 7) {
+  if (player.hand.filter(function (c) { return c.type === 'number'; }).length >= 7) {
     var bonus = calculateRoundScore(state, playerIdx) + 15;
     player.score += bonus;
     state.discard.push.apply(state.discard, player.hand);
