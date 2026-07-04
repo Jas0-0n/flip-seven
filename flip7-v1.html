@@ -763,6 +763,12 @@
       background: rgba(168, 85, 247, 0.15);
     }
 
+    .history-chip.revive {
+      border-color: #ec4899;
+      color: #fbcfe8;
+      background: rgba(236, 72, 153, 0.15);
+    }
+
     /* ===== TOAST ===== */
     .toast {
       position: fixed;
@@ -1344,7 +1350,6 @@
       <div class="actions" id="actions">
         <button class="btn btn-go" id="btnGo" onclick="handleGo()">GO 翻牌</button>
         <button class="btn btn-stop" id="btnStop" onclick="handleStop()">STOP</button>
-        <button class="btn btn-test" id="btnTestFreeze" onclick="testFreeze()" style="margin-top:8px;background:#7c3aed;color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;">🧪 测试 Freeze</button>
       </div>
     </div>
 
@@ -1437,9 +1442,12 @@
       deck.push({ type: 'special', value: '+8', effect: 8, id: 'sp8' });
       deck.push({ type: 'special', value: '+10', effect: 10, id: 'sp10' });
       deck.push({ type: 'special', value: 'x2', effect: 'double', id: 'spx2' });
-      deck.push({ type: 'action', value: 'freeze', effect: 'freeze', id: 'af1' });
-      deck.push({ type: 'action', value: 'freeze', effect: 'freeze', id: 'af2' });
-      deck.push({ type: 'action', value: 'freeze', effect: 'freeze', id: 'af3' });
+      for (let i = 1; i <= 10; i++) {
+        deck.push({ type: 'action', value: 'freeze', effect: 'freeze', id: 'af' + i });
+      }
+      for (let i = 1; i <= 10; i++) {
+        deck.push({ type: 'revive', value: 'revive', effect: 'revive', id: 'rv' + i });
+      }
       return deck;
     }
 
@@ -1537,11 +1545,12 @@
       if (v === '+10') return 'card-sp-plus10';
       if (v === 'x2') return 'card-sp-x2';
       if (card.type === 'action') return 'card-action-freeze';
+      if (card.type === 'revive') return 'card-revive';
       return 'card-v0';
     }
 
     function miniCardHTML(card) {
-      const label = card.type === 'number' ? '\u6570\u5b57' : (card.type === 'action' ? '\u884c\u52a8' : '\u7279\u6b8a');
+      const label = card.type === 'number' ? '\u6570\u5b57' : (card.type === 'action' ? '\u884c\u52a8' : (card.type === 'revive' ? '\u590d\u6d3b' : '\u7279\u6b8a'));
       return '<div class="mini-card ' + cardClass(card) + '">' +
         '<span class="card-label">' + label + '</span>' +
         '<span class="card-value">' + card.value + '</span></div>';
@@ -1554,7 +1563,7 @@
       var front = document.getElementById('flipCardFront');
 
       front.className = 'flip-card-front ' + cardClass(card);
-      front.innerHTML = '<span class="flip-label">' + (card.type === 'number' ? '\u6570\u5b57' : (card.type === 'action' ? '\u884c\u52a8' : '\u7279\u6b8a')) + '</span><span class="flip-value">' + card.value + '</span>';
+      front.innerHTML = '<span class="flip-label">' + (card.type === 'number' ? '\u6570\u5b57' : (card.type === 'action' ? '\u884c\u52a8' : (card.type === 'revive' ? '\u590d\u6d3b' : '\u7279\u6b8a'))) + '</span><span class="flip-value">' + card.value + '</span>';
 
       placeholder.style.display = 'none';
       flipCard.style.display = '';
@@ -1691,6 +1700,7 @@
         var cls = 'history-chip';
         if (h.bust) cls += ' bust';
         else if (h.flip7) cls += ' flip7';
+        else if (h.revive) cls += ' revive';
         else if (h.special) cls += ' special';
         return '<span class="' + cls + '">' + h.text + '</span>';
       }).join('');
@@ -1727,6 +1737,25 @@
       var isBust = card.type === 'number' && player.hand.some(function (c) { return c.type === 'number' && c.value === card.value; });
 
       if (isBust) {
+        const reviveIndex = player.hand.findIndex(function (c) { return c.type === 'revive'; });
+        if (reviveIndex >= 0) {
+          const revivedCard = player.hand[reviveIndex];
+          player.hand.splice(reviveIndex, 1);
+          state.discard.push(revivedCard);
+          state.discard.push(card);
+          state.history.push({
+            round: state.roundNumber, playerId: state.currentPlayer,
+            cards: [card.value], score: 0, bust: false, special: false, flip7: false, revive: true,
+            text: 'P' + state.currentPlayer + ' \ud83d\udee1\ufe0f 复活牌抵消！'
+          });
+          showToast('\ud83d\udee1\ufe0f 复活牌抵消了判负！');
+          switchToNextPlayer();
+          state.roundNumber++;
+          state.state = 'waiting';
+          render();
+          return;
+        }
+
         state.discard.push.apply(state.discard, player.hand);
         state.discard.push(card);
         player.hand = [];
