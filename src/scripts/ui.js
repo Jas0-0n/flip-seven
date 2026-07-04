@@ -5,7 +5,7 @@ export function showToast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2000);
+  setTimeout(() => el.classList.remove('show'), 1000);
 }
 
 export function cardClass(card) {
@@ -17,13 +17,23 @@ export function cardClass(card) {
   if (v === '+8') return 'card-sp-plus8';
   if (v === '+10') return 'card-sp-plus10';
   if (v === 'x2') return 'card-sp-x2';
-  if (card.type === 'action') return 'card-action-freeze';
+  if (card.type === 'action') {
+    if (card.effect === 'flipthree') return 'card-action-flipthree';
+    return 'card-action-freeze';
+  }
   if (card.type === 'revive') return 'card-revive';
   return 'card-v0';
 }
 
+function cardLabel(card) {
+  if (card.type === 'number') return '\u6570\u5b57';
+  if (card.type === 'action') return card.effect === 'flipthree' ? '\u7ffb\u4e09' : '\u51bb\u7ed3';
+  if (card.type === 'revive') return '\u590d\u6d3b';
+  return '\u7279\u6b8a';
+}
+
 export function miniCardHTML(card) {
-  const label = card.type === 'number' ? '\u6570\u5b57' : (card.type === 'action' ? '\u884c\u52a8' : (card.type === 'revive' ? '\u590d\u6d3b' : '\u7279\u6b8a'));
+  const label = cardLabel(card);
   return '<div class="mini-card ' + cardClass(card) + '">' +
     '<span class="card-label">' + label + '</span>' +
     '<span class="card-value">' + card.value + '</span></div>';
@@ -35,7 +45,7 @@ export function showFlipCard(card, onDone) {
   const front = document.getElementById('flipCardFront');
 
   front.className = 'flip-card-front ' + cardClass(card);
-  front.innerHTML = '<span class="flip-label">' + (card.type === 'number' ? '\u6570\u5b57' : (card.type === 'action' ? '\u884c\u52a8' : (card.type === 'revive' ? '\u590d\u6d3b' : '\u7279\u6b8a'))) + '</span><span class="flip-value">' + card.value + '</span>';
+  front.innerHTML = '<span class="flip-label">' + cardLabel(card) + '</span><span class="flip-value">' + card.value + '</span>';
 
   placeholder.style.display = 'none';
   flipCard.style.display = '';
@@ -48,9 +58,9 @@ export function showFlipCard(card, onDone) {
     flipCard.className = 'flip-card-container flipped';
     void flipCard.offsetWidth;
     flipCard.classList.add('pop');
-  }, 500);
+  }, 250);
 
-  setTimeout(onDone, 700);
+  setTimeout(onDone, 350);
 }
 
 export function hideFlipCard() {
@@ -77,8 +87,8 @@ export function flyCardToHand(card, playerIdx, onDone) {
   fly.style.height = '126px';
   fly.style.zIndex = '999';
   fly.style.pointerEvents = 'none';
-  fly.style.transition = 'left 0.35s cubic-bezier(0.25,0.46,0.45,0.94), top 0.35s cubic-bezier(0.25,0.46,0.45,0.94)';
-  fly.innerHTML = '<span class="card-label">' + (card.type === 'number' ? '\u6570\u5b57' : (card.type === 'action' ? '\u884c\u52a8' : (card.type === 'revive' ? '\u590d\u6d3b' : '\u7279\u6b8a'))) + '</span><span class="card-value">' + card.value + '</span>';
+  fly.style.transition = 'left 0.175s cubic-bezier(0.25,0.46,0.45,0.94), top 0.175s cubic-bezier(0.25,0.46,0.45,0.94)';
+  fly.innerHTML = '<span class="card-label">' + cardLabel(card) + '</span><span class="card-value">' + card.value + '</span>';
   document.body.appendChild(fly);
 
   hideFlipCard();
@@ -88,12 +98,12 @@ export function flyCardToHand(card, playerIdx, onDone) {
 
   setTimeout(function () {
     fly.style.transition = 'none';
-    fly.style.animation = 'card-fly 0.25s ease-in forwards';
+    fly.style.animation = 'card-fly 0.125s ease-in forwards';
     setTimeout(function () {
       fly.remove();
       onDone();
-    }, 250);
-  }, 350);
+    }, 125);
+  }, 175);
 }
 
 export function render(state) {
@@ -161,21 +171,21 @@ export function showRoundNotify(text, type) {
   el.className = 'round-notify ' + type;
   el.textContent = text;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 2200);
+  setTimeout(() => el.remove(), 1100);
 }
 
 export function showBustEffect() {
   document.body.classList.add('shake');
-  setTimeout(() => document.body.classList.remove('shake'), 500);
+  setTimeout(() => document.body.classList.remove('shake'), 250);
   const overlay = document.createElement('div');
   overlay.className = 'bust-overlay';
   document.body.appendChild(overlay);
-  setTimeout(() => overlay.remove(), 500);
+  setTimeout(() => overlay.remove(), 250);
   const text = document.createElement('div');
   text.className = 'bust-text';
-  text.textContent = 'BUST!';
+  text.textContent = '💥 BUST!';
   document.body.appendChild(text);
-  setTimeout(() => text.remove(), 1200);
+  setTimeout(() => text.remove(), 600);
   if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
 }
 
@@ -184,7 +194,7 @@ export function showFlip7Effect() {
   overlay.className = 'flip7-overlay';
   overlay.innerHTML = '<div class="flip7-text">\u2b50 FLIP 7!</div>';
   document.body.appendChild(overlay);
-  setTimeout(() => overlay.remove(), 2500);
+  setTimeout(() => overlay.remove(), 1250);
   for (let i = 0; i < 30; i++) {
     const piece = document.createElement('div');
     piece.className = 'confetti-piece';
@@ -196,7 +206,7 @@ export function showFlip7Effect() {
     piece.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
     piece.style.animation = 'confetti-fall ' + (Math.random() * 1.5 + 1) + 's linear ' + (Math.random() * 0.5) + 's forwards';
     document.body.appendChild(piece);
-    setTimeout(() => piece.remove(), 3000);
+    setTimeout(() => piece.remove(), 1500);
   }
   if (navigator.vibrate) navigator.vibrate([50, 30, 50, 30, 50, 30, 100]);
 }
@@ -234,6 +244,25 @@ export function showFreezeTargetSelection(targets, onSelect) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay freeze-selection-overlay show';
   let html = '<div class="modal"><h2>❄️ 选择冻结目标</h2><p>选择要冻结的玩家：</p><div class="freeze-targets">';
+  targets.forEach(function (idx) {
+    html += '<div class="freeze-target" data-idx="' + idx + '"><div class="freeze-target-name">玩家 ' + (idx + 1) + '</div></div>';
+  });
+  html += '</div></div>';
+  overlay.innerHTML = html;
+  document.body.appendChild(overlay);
+  overlay.querySelectorAll('.freeze-target').forEach(function (el) {
+    el.addEventListener('click', function () {
+      const targetIdx = parseInt(this.getAttribute('data-idx'));
+      overlay.remove();
+      onSelect(targetIdx);
+    });
+  });
+}
+
+export function showFlipThreeTargetSelection(targets, onSelect) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay freeze-selection-overlay show';
+  let html = '<div class="modal"><h2>🔄 选择翻三张目标</h2><p>选择要翻三张的玩家：</p><div class="freeze-targets">';
   targets.forEach(function (idx) {
     html += '<div class="freeze-target" data-idx="' + idx + '"><div class="freeze-target-name">玩家 ' + (idx + 1) + '</div></div>';
   });

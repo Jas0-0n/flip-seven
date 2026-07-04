@@ -17,6 +17,9 @@ export function buildDeck() {
     deck.push({ type: 'action', value: 'freeze', effect: 'freeze', id: 'af' + i });
   }
   for (let i = 1; i <= 3; i++) {
+    deck.push({ type: 'action', value: 'flipthree', effect: 'flipthree', id: 'at' + i });
+  }
+  for (let i = 1; i <= 3; i++) {
     deck.push({ type: 'revive', value: 'revive', effect: 'revive', id: 'rv' + i });
   }
   return deck;

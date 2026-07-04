@@ -411,6 +411,13 @@
       box-shadow: 0 0 8px rgba(168, 85, 247, 0.5);
     }
 
+    .card-action-flipthree {
+      background: linear-gradient(135deg, #34d399, #10b981, #059669);
+      color: #022c22;
+      border-color: #10b981;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+    }
+
     /* ===== CENTER AREA ===== */
     .center-area {
       background: var(--bg-card);
@@ -527,7 +534,7 @@
     }
 
     .flip-card-container.flipped {
-      animation: flip-to-front 0.5s ease forwards;
+      animation: flip-to-front 0.25s ease forwards;
     }
 
     @keyframes card-pop {
@@ -545,7 +552,7 @@
     }
 
     .flip-card-container.pop {
-      animation: card-pop 0.2s ease forwards;
+      animation: card-pop 0.1s ease forwards;
     }
 
     @keyframes card-fly {
@@ -571,12 +578,12 @@
       height: 126px;
       z-index: 999;
       pointer-events: none;
-      transition: left 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+      transition: left 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94),
         top 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
     }
 
     .flying-card.animate {
-      animation: card-fly 0.25s ease-in forwards;
+      animation: card-fly 0.125s ease-in forwards;
     }
 
     .flip-card-front,
@@ -848,7 +855,7 @@
       -webkit-text-fill-color: transparent;
       text-shadow: none;
       filter: drop-shadow(0 0 20px rgba(245, 158, 11, 0.6));
-      animation: flip7-text 0.6s ease-out forwards, flip7-text-hide 0.4s ease-in 1.5s forwards;
+      animation: flip7-text 0.3s ease-out forwards, flip7-text-hide 0.2s ease-in 0.75s forwards;
     }
 
     /* Confetti particles */
@@ -893,7 +900,7 @@
       background: var(--bust-red);
       z-index: 998;
       pointer-events: none;
-      animation: bust-flash 0.5s ease-out forwards;
+      animation: bust-flash 0.25s ease-out forwards;
     }
 
     @keyframes bust-text {
@@ -936,7 +943,7 @@
       color: #fca5a5;
       z-index: 1001;
       pointer-events: none;
-      animation: bust-text 1.2s ease-out forwards;
+      animation: bust-text 0.6s ease-out forwards;
       text-shadow: 0 0 20px rgba(220, 38, 38, 0.6);
     }
 
@@ -977,7 +984,7 @@
       font-weight: 900;
       z-index: 1003;
       pointer-events: none;
-      animation: round-notify 2s ease-out forwards;
+      animation: round-notify 1s ease-out forwards;
       text-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
       white-space: nowrap;
     }
@@ -1053,14 +1060,14 @@
     .result-text {
       font-size: 52px;
       font-weight: 900;
-      animation: win-scale 0.6s ease-out forwards;
+      animation: win-scale 0.3s ease-out forwards;
     }
 
     .result-overlay.win .result-text {
       background: linear-gradient(135deg, #fbbf24, #f59e0b);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
-      animation: win-scale 0.6s ease-out forwards, win-glow 2s ease-in-out infinite;
+      animation: win-scale 0.3s ease-out forwards, win-glow 1s ease-in-out infinite;
     }
 
     .result-overlay.lose .result-text {

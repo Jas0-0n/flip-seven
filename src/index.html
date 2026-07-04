@@ -100,13 +100,14 @@
         <li><strong>+10</strong>（1张）：本回合得分 +10</li>
         <li><strong>x2</strong>（1张）：将本回合手牌总分 ×2 作为最终得分</li>
       </ul>
-      <p><strong>行动牌（10张）：</strong></p>
+      <p><strong>行动牌（6张）：</strong></p>
       <ul>
-        <li><strong>冻结</strong>（10张）：对一名其他玩家使用，立即结算其本轮得分并结束本轮</li>
+        <li><strong>冻结</strong>（3张）：对一名其他玩家使用，立即结算其本轮得分并结束本轮</li>
+        <li><strong>翻三张</strong>（3张）：选择一名存活玩家（或自己），该玩家依次翻3张牌；若爆牌或七连翻则停止；过程中翻到的冻结/翻三张暂存，3张发完后依次结算</li>
       </ul>
       <p><strong>功能牌（10张）：</strong></p>
       <ul>
-        <li><strong>复活</strong>（10张）：手牌中存在时，可在判负时抵消一次判负</li>
+        <li><strong>复活</strong>（3张）：手牌中存在时，可在判负时抵消一次判负</li>
       </ul>
       <h3>🎮 回合流程</h3>
       <ul>
@@ -133,7 +134,7 @@
     import { createInitialState } from './scripts/data.js';
     import { calculateRoundScore } from './scripts/utils.js';
     import { handleGo, handleStop } from './scripts/game.js';
-    import { render, showFlipCard, hideFlipCard, flyCardToHand, showToast, showBustEffect, showFlip7Effect, showWinResult, showRoundNotify, showFreezeTargetSelection, initRulesModal, showRules as uiShowRules, hideRules as uiHideRules } from './scripts/ui.js';
+    import { render, showFlipCard, hideFlipCard, flyCardToHand, showToast, showBustEffect, showFlip7Effect, showWinResult, showRoundNotify, showFreezeTargetSelection, showFlipThreeTargetSelection, initRulesModal, showRules as uiShowRules, hideRules as uiHideRules } from './scripts/ui.js';
 
     let state = createInitialState();
 
@@ -141,7 +142,7 @@
       handleGo(state, {
         render, showFlipCard, hideFlipCard, flyCardToHand, showToast,
         showBustEffect, showFlip7Effect, showWinResult, showRoundNotify,
-        showFreezeTargetSelection
+        showFreezeTargetSelection, showFlipThreeTargetSelection
       });
     };
     window.handleStop = () => {
