@@ -131,8 +131,8 @@
 
   <script type="module">
     import { createInitialState } from './scripts/data.js';
-    import { calculateRoundScore, checkWinner, getActivePlayers, switchToNextPlayer } from './scripts/utils.js';
-    import { autoRefillDeck, startNewRound, handleGo, handleStop, afterFlip } from './scripts/game.js';
+    import { calculateRoundScore } from './scripts/utils.js';
+    import { handleGo, handleStop } from './scripts/game.js';
     import { render, showFlipCard, hideFlipCard, flyCardToHand, showToast, showBustEffect, showFlip7Effect, showWinResult, showRoundNotify, showFreezeTargetSelection, initRulesModal, showRules as uiShowRules, hideRules as uiHideRules } from './scripts/ui.js';
 
     let state = createInitialState();
@@ -141,7 +141,7 @@
       handleGo(state, {
         render, showFlipCard, hideFlipCard, flyCardToHand, showToast,
         showBustEffect, showFlip7Effect, showWinResult, showRoundNotify,
-        showFreezeTargetSelection, autoRefillDeck
+        showFreezeTargetSelection
       });
     };
     window.handleStop = () => {

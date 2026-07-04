@@ -3,18 +3,14 @@ import { calculateRoundScore, checkWinner, getActivePlayers, switchToNextPlayer 
 
 export { createInitialState, shuffle, calculateRoundScore, checkWinner, getActivePlayers, switchToNextPlayer };
 
-export function autoRefillDeck(state, showToast) {
-  if (state.deck.length === 0 && state.discard.length > 0) {
-    state.deck = shuffle([...state.discard]);
-    state.discard = [];
-    if (showToast) showToast('♻️ 牌堆已补充！');
-  }
-}
+// ===== ROUND MANAGEMENT =====
 
 export function startNewRound(state) {
+  // First player to leave this round gets first turn next round
   if (state.firstOut !== null) {
     state.currentPlayer = state.firstOut;
   } else {
+    // Flip7: no one left → other player starts
     state.currentPlayer = state.currentPlayer === 1 ? 2 : 1;
   }
   state.playerOut = [false, false];
@@ -24,22 +20,45 @@ export function startNewRound(state) {
   state.state = 'waiting';
 }
 
-export function settleRound(state, playerIdx, calculateRoundScore) {
+function endRound(state, ui) {
+  if (ui.showRoundNotify) ui.showRoundNotify('第 ' + state.roundNumber + ' 回合结束！', 'end');
+  startNewRound(state);
+  if (ui.render) ui.render(state);
+  if (ui.showToast) ui.showToast('本回合结束，进入下一回合！');
+  setTimeout(function () {
+    if (ui.showRoundNotify) ui.showRoundNotify('第 ' + state.roundNumber + ' 回合开始！', 'start');
+  }, 1500);
+}
+
+// ===== HELPERS =====
+
+export function autoRefillDeck(state, showToast) {
+  if (state.deck.length === 0 && state.discard.length > 0) {
+    state.deck = shuffle([...state.discard]);
+    state.discard = [];
+    if (showToast) showToast('♻️ 牌堆已补充！');
+  }
+}
+
+export function settleRound(state, playerIdx) {
   const score = calculateRoundScore(state, playerIdx);
   const player = state.players[playerIdx];
   player.score += score;
-  return { score, cards: player.hand.map(c => c.value) };
+  return { score, cards: player.hand.map(function (c) { return c.value; }) };
 }
+
+// ===== CORE: afterFlip =====
 
 export function afterFlip(state, card, playerIdx, ui) {
   state.flipAnimating = false;
-  const player = state.players[playerIdx];
-  const isBust = card.type === 'number' && player.hand.some(c => c.type === 'number' && c.value === card.value);
+  var player = state.players[playerIdx];
+  var isBust = card.type === 'number' && player.hand.some(function (c) { return c.type === 'number' && c.value === card.value; });
 
+  // --- REVIVE: consume one revive to cancel bust ---
   if (isBust) {
-    const reviveIndex = player.hand.findIndex(c => c.type === 'revive');
+    var reviveIndex = player.hand.findIndex(function (c) { return c.type === 'revive'; });
     if (reviveIndex >= 0) {
-      const revivedCard = player.hand[reviveIndex];
+      var revivedCard = player.hand[reviveIndex];
       player.hand.splice(reviveIndex, 1);
       state.discard.push(revivedCard);
       state.discard.push(card);
@@ -49,14 +68,15 @@ export function afterFlip(state, card, playerIdx, ui) {
         text: 'P' + state.currentPlayer + ' 🛡️ 复活牌抵消！'
       });
       if (ui.showToast) ui.showToast('🛡️ 复活牌抵消了判负！');
+      // Revive: player stays in, switch to other player
       switchToNextPlayer(state);
-      state.roundNumber++;
       state.state = 'waiting';
       if (ui.render) ui.render(state);
       return;
     }
 
-    state.discard.push(...player.hand, card);
+    // --- BUST: player is out ---
+    state.discard.push.apply(state.discard, player.hand.concat([card]));
     player.hand = [];
     state.playerOut[playerIdx] = true;
     if (state.firstOut === null) state.firstOut = state.currentPlayer;
@@ -66,90 +86,113 @@ export function afterFlip(state, card, playerIdx, ui) {
       cards: [card.value], score: 0, bust: true, special: false, flip7: false,
       text: 'P' + state.currentPlayer + ' 💥 ' + card.value + ' (判负!)'
     });
+    if (ui.showBustEffect) ui.showBustEffect();
 
-    const active = getActivePlayers(state);
+    var active = getActivePlayers(state);
+
+    // All players out → round ends
     if (active.length === 0) {
-      if (ui.showRoundNotify) ui.showRoundNotify('第 ' + state.roundNumber + ' 回合结束！', 'end');
-      startNewRound(state);
-      if (ui.render) ui.render(state);
-      if (ui.showBustEffect) ui.showBustEffect();
-      if (ui.showToast) ui.showToast('💥 全员判负！下一轮开始');
-      setTimeout(() => { if (ui.showRoundNotify) ui.showRoundNotify('第 ' + state.roundNumber + ' 回合开始！', 'start'); }, 1500);
+      endRound(state, ui);
+      if (ui.showToast) ui.showToast('💥 全员判负！');
       return;
     }
+
+    // 1 player left → they play alone (single player mode)
     if (active.length === 1) {
       state.currentPlayer = active[0] + 1;
-      state.roundNumber++;
       state.state = 'waiting';
       if (ui.render) ui.render(state);
-      if (ui.showBustEffect) ui.showBustEffect();
       return;
     }
 
+    // Multiple players still active → switch turn
     switchToNextPlayer(state);
-    state.roundNumber++;
     state.state = 'waiting';
     if (ui.render) ui.render(state);
-    if (ui.showBustEffect) ui.showBustEffect();
     return;
   }
 
+  // --- FREEZE: settle target player, target is out ---
   if (card.type === 'action' && card.effect === 'freeze') {
     state.discard.push(card);
-    const active = getActivePlayers(state);
-    if (active.length <= 1) {
+    var activeFreeze = getActivePlayers(state);
+    if (activeFreeze.length <= 1) {
       if (ui.showToast) ui.showToast('冻结牌无效！只有一位玩家活跃');
-      state.roundNumber++;
       state.state = 'waiting';
       if (ui.render) ui.render(state);
       return;
     }
-    const targets = active.filter(i => i !== playerIdx);
+    var targets = activeFreeze.filter(function (i) { return i !== playerIdx; });
     if (ui.showFreezeTargetSelection) {
-      ui.showFreezeTargetSelection(targets, targetIdx => {
-        const otherPlayer = state.players[targetIdx];
-        const otherScore = calculateRoundScore(state, targetIdx);
+      ui.showFreezeTargetSelection(targets, function (targetIdx) {
+        var otherPlayer = state.players[targetIdx];
+        var otherScore = calculateRoundScore(state, targetIdx);
         otherPlayer.score += otherScore;
-        state.discard.push(...otherPlayer.hand);
+        state.discard.push.apply(state.discard, otherPlayer.hand);
         otherPlayer.hand = [];
+        state.playerOut[targetIdx] = true;
+        if (state.firstOut === null) state.firstOut = targetIdx + 1;
+
         state.history.push({
           round: state.roundNumber, playerId: targetIdx + 1,
           cards: [], score: otherScore, bust: false, special: false, flip7: false, freezeEnd: true,
           text: 'P' + (targetIdx + 1) + ' 🧊 冻结结束 +' + otherScore + '分'
         });
-        if (ui.showToast) ui.showToast('🧊 冻结了 P' + (targetIdx + 1) + '！结算 +' + otherScore + '分，开始新一回合');
-        if (ui.showRoundNotify) ui.showRoundNotify('第 ' + state.roundNumber + ' 回合结束！', 'end');
-        setTimeout(() => {
-          startNewRound(state);
+        if (ui.showToast) ui.showToast('🧊 冻结了 P' + (targetIdx + 1) + '！结算 +' + otherScore + '分');
+
+        var activeAfterFreeze = getActivePlayers(state);
+
+        // All out → round ends
+        if (activeAfterFreeze.length === 0) {
+          endRound(state, ui);
+          return;
+        }
+
+        // 1 left → they play alone
+        if (activeAfterFreeze.length === 1) {
+          state.currentPlayer = activeAfterFreeze[0] + 1;
+          state.state = 'waiting';
           if (ui.render) ui.render(state);
-          if (ui.showRoundNotify) ui.showRoundNotify('第 ' + state.roundNumber + ' 回合开始！', 'start');
-        }, 1500);
+          return;
+        }
+
+        // Multiple left → switch turn
+        switchToNextPlayer(state);
+        state.state = 'waiting';
+        if (ui.render) ui.render(state);
       });
     }
     return;
   }
 
+  // --- NORMAL: add card to hand ---
   player.hand.push(card);
 
+  // --- FLIP 7 CHECK: 7 cards → both out, round ends ---
   if (player.hand.length >= 7) {
-    const bonus = calculateRoundScore(state, playerIdx) + 15;
+    var bonus = calculateRoundScore(state, playerIdx) + 15;
     player.score += bonus;
-    state.discard.push(...player.hand);
+    state.discard.push.apply(state.discard, player.hand);
     player.hand = [];
+    state.playerOut[playerIdx] = true;
 
-    const otherIdx = playerIdx === 0 ? 1 : 0;
-    const otherPlayer = state.players[otherIdx];
+    // Passive settle: other player is also out
+    var otherIdx = playerIdx === 0 ? 1 : 0;
+    var otherPlayer = state.players[otherIdx];
     if (otherPlayer.hand.length > 0) {
-      const otherScore = calculateRoundScore(state, otherIdx);
+      var otherScore = calculateRoundScore(state, otherIdx);
       otherPlayer.score += otherScore;
       state.history.push({
         round: state.roundNumber, playerId: otherIdx + 1,
-        cards: otherPlayer.hand.map(c => c.value), score: otherScore, bust: false, special: false, flip7: false,
+        cards: otherPlayer.hand.map(function (c) { return c.value; }),
+        score: otherScore, bust: false, special: false, flip7: false,
         text: 'P' + (otherIdx + 1) + ' 📊 被动结算 +' + otherScore + '分'
       });
-      state.discard.push(...otherPlayer.hand);
+      state.discard.push.apply(state.discard, otherPlayer.hand);
       otherPlayer.hand = [];
     }
+    state.playerOut[otherIdx] = true;
+    if (state.firstOut === null) state.firstOut = state.currentPlayer;
 
     state.history.push({
       round: state.roundNumber, playerId: state.currentPlayer,
@@ -159,25 +202,27 @@ export function afterFlip(state, card, playerIdx, ui) {
 
     if (ui.render) ui.render(state);
     if (ui.showFlip7Effect) ui.showFlip7Effect();
+
+    // Check if game winner
     if (checkWinner(state, playerIdx)) {
-      setTimeout(() => { if (ui.showWinResult) ui.showWinResult(state, state.currentPlayer); }, 1000);
+      setTimeout(function () { if (ui.showWinResult) ui.showWinResult(state, state.currentPlayer); }, 1000);
       return;
     }
-    setTimeout(() => { if (ui.showRoundNotify) ui.showRoundNotify('第 ' + state.roundNumber + ' 回合结束！', 'end'); }, 500);
-    setTimeout(() => {
-      startNewRound(state);
-      if (ui.render) ui.render(state);
-      if (ui.showRoundNotify) ui.showRoundNotify('第 ' + state.roundNumber + ' 回合开始！', 'start');
-    }, 2500);
+
+    // Both out → round ends
+    setTimeout(function () {
+      endRound(state, ui);
+    }, 1000);
     return;
   }
 
-  state.roundNumber++;
+  // --- SUCCESS: switch to other player, round continues ---
+  switchToNextPlayer(state);
   state.state = 'waiting';
-  const act = getActivePlayers(state);
-  if (act.length > 1) switchToNextPlayer(state);
   if (ui.render) ui.render(state);
 }
+
+// ===== ACTIONS =====
 
 export function handleGo(state, ui) {
   if (state.state === 'ended' || state.flipAnimating) return;
@@ -187,18 +232,18 @@ export function handleGo(state, ui) {
     return;
   }
 
-  const card = state.deck.pop();
-  const playerIdx = state.currentPlayer - 1;
+  var card = state.deck.pop();
+  var playerIdx = state.currentPlayer - 1;
   state.totalFlipsThisRound++;
   state.state = 'playing';
   state.flipAnimating = true;
   if (ui.render) ui.render(state);
 
   if (ui.showFlipCard) {
-    ui.showFlipCard(card, () => {
-      setTimeout(() => {
+    ui.showFlipCard(card, function () {
+      setTimeout(function () {
         if (ui.flyCardToHand) {
-          ui.flyCardToHand(card, playerIdx, () => {
+          ui.flyCardToHand(card, playerIdx, function () {
             afterFlip(state, card, playerIdx, ui);
           });
         } else {
@@ -209,60 +254,52 @@ export function handleGo(state, ui) {
   }
 }
 
-export function handleStop(state, ui, calculateRoundScore) {
+export function handleStop(state, ui) {
   if (state.flipAnimating || state.state === 'ended') return;
-  const playerIdx = state.currentPlayer - 1;
-  const player = state.players[playerIdx];
+  var playerIdx = state.currentPlayer - 1;
+  var player = state.players[playerIdx];
   if (player.hand.length === 0) {
     if (ui.showToast) ui.showToast('⚠️ 手牌为空，无法结算！');
     return;
   }
 
-  const { score, cards } = settleRound(state, playerIdx, calculateRoundScore);
+  // Settle: add score to total
+  var result = settleRound(state, playerIdx);
   state.history.push({
     round: state.roundNumber, playerId: state.currentPlayer,
-    cards, score, bust: false, special: false, flip7: false,
-    text: 'P' + state.currentPlayer + ' ✋ ' + (cards.join(',') || '空') + ' → +' + score + '分'
+    cards: result.cards, score: result.score, bust: false, special: false, flip7: false,
+    text: 'P' + state.currentPlayer + ' ✋ ' + (result.cards.join(',') || '空') + ' → +' + result.score + '分'
   });
-  state.discard.push(...player.hand);
+  state.discard.push.apply(state.discard, player.hand);
   player.hand = [];
   if (ui.hideFlipCard) ui.hideFlipCard();
   state.totalFlipsThisRound = 0;
-
-  if (checkWinner(state, playerIdx)) {
-    state.state = 'ended';
-    if (ui.render) ui.render(state);
-    setTimeout(() => { if (ui.showWinResult) ui.showWinResult(state, state.currentPlayer); }, 500);
-    return;
-  }
-
   state.playerOut[playerIdx] = true;
   if (state.firstOut === null) state.firstOut = state.currentPlayer;
 
-  const active = getActivePlayers(state);
-  if (active.length === 0) {
-    if (ui.showRoundNotify) ui.showRoundNotify('第 ' + state.roundNumber + ' 回合结束！', 'end');
-    startNewRound(state);
+  // Check game winner
+  if (checkWinner(state, playerIdx)) {
+    state.state = 'ended';
     if (ui.render) ui.render(state);
-    if (ui.showToast) ui.showToast('本回合结束，进入下一回合！');
-    setTimeout(() => { if (ui.showRoundNotify) ui.showRoundNotify('第 ' + state.roundNumber + ' 回合开始！', 'start'); }, 1500);
+    setTimeout(function () { if (ui.showWinResult) ui.showWinResult(state, state.currentPlayer); }, 500);
     return;
   }
 
+  var active = getActivePlayers(state);
+
+  // All out → round ends
+  if (active.length === 0) {
+    endRound(state, ui);
+    return;
+  }
+
+  // 1 left → they play alone (single player mode)
   if (active.length === 1) {
     state.currentPlayer = active[0] + 1;
   } else {
     switchToNextPlayer(state);
   }
-  state.roundNumber++;
+
   state.state = 'waiting';
   if (ui.render) ui.render(state);
-}
-
-export function resetGame(state, ui, showRoundNotify) {
-  const newState = createInitialState();
-  Object.assign(state, newState);
-  if (ui.render) ui.render(state);
-  if (ui.showToast) ui.showToast('🔄 新游戏已开始！');
-  if (showRoundNotify) showRoundNotify('第 1 回合开始！', 'start');
 }

@@ -48,9 +48,9 @@ export function showFlipCard(card, onDone) {
     flipCard.className = 'flip-card-container flipped';
     void flipCard.offsetWidth;
     flipCard.classList.add('pop');
-  }, 600);
+  }, 500);
 
-  setTimeout(onDone, 900);
+  setTimeout(onDone, 700);
 }
 
 export function hideFlipCard() {
@@ -77,7 +77,7 @@ export function flyCardToHand(card, playerIdx, onDone) {
   fly.style.height = '126px';
   fly.style.zIndex = '999';
   fly.style.pointerEvents = 'none';
-  fly.style.transition = 'left 0.45s cubic-bezier(0.25,0.46,0.45,0.94), top 0.45s cubic-bezier(0.25,0.46,0.45,0.94)';
+  fly.style.transition = 'left 0.35s cubic-bezier(0.25,0.46,0.45,0.94), top 0.35s cubic-bezier(0.25,0.46,0.45,0.94)';
   fly.innerHTML = '<span class="card-label">' + (card.type === 'number' ? '\u6570\u5b57' : (card.type === 'action' ? '\u884c\u52a8' : (card.type === 'revive' ? '\u590d\u6d3b' : '\u7279\u6b8a'))) + '</span><span class="card-value">' + card.value + '</span>';
   document.body.appendChild(fly);
 
@@ -88,12 +88,12 @@ export function flyCardToHand(card, playerIdx, onDone) {
 
   setTimeout(function () {
     fly.style.transition = 'none';
-    fly.style.animation = 'card-fly 0.35s ease-in forwards';
+    fly.style.animation = 'card-fly 0.25s ease-in forwards';
     setTimeout(function () {
       fly.remove();
       onDone();
-    }, 350);
-  }, 450);
+    }, 250);
+  }, 350);
 }
 
 export function render(state) {

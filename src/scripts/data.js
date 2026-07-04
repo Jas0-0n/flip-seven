@@ -13,10 +13,10 @@ export function buildDeck() {
   deck.push({ type: 'special', value: '+8', effect: 8, id: 'sp8' });
   deck.push({ type: 'special', value: '+10', effect: 10, id: 'sp10' });
   deck.push({ type: 'special', value: 'x2', effect: 'double', id: 'spx2' });
-  for (let i = 1; i <= 10; i++) {
+  for (let i = 1; i <= 3; i++) {
     deck.push({ type: 'action', value: 'freeze', effect: 'freeze', id: 'af' + i });
   }
-  for (let i = 1; i <= 10; i++) {
+  for (let i = 1; i <= 3; i++) {
     deck.push({ type: 'revive', value: 'revive', effect: 'revive', id: 'rv' + i });
   }
   return deck;
