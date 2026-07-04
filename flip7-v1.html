@@ -1141,24 +1141,6 @@
       font-weight: 800;
     }
 
-    .player-area.frozen {
-      border-color: #a855f7 !important;
-      box-shadow: 0 0 18px rgba(168, 85, 247, 0.4) !important;
-    }
-
-    .player-area.frozen::before {
-      content: '❄️ 冻结中';
-      position: absolute;
-      top: 8px;
-      right: 10px;
-      font-size: 12px;
-      background: rgba(168, 85, 247, 0.2);
-      color: #e879f9;
-      padding: 3px 8px;
-      border-radius: 999px;
-      border: 1px solid rgba(168, 85, 247, 0.5);
-    }
-
     .modal {
       background: var(--bg-card);
       border-radius: var(--radius);
@@ -1474,8 +1456,7 @@
         history: [],
         flipAnimating: false,
         playerOut: [false, false],
-        firstOut: null,
-        frozenPlayer: null
+        firstOut: null
       };
     }
 
@@ -1518,13 +1499,7 @@
       if (active.length <= 1) return;
       const curIdx = state.currentPlayer - 1;
       const pos = active.indexOf(curIdx);
-      let next = active[(pos + 1) % active.length] + 1;
-      // Frozen player skip: if next player is frozen, skip them
-      if (next === state.frozenPlayer) {
-        state.frozenPlayer = null;
-        next = active[(pos + 2) % active.length] + 1;
-      }
-      state.currentPlayer = next;
+      state.currentPlayer = active[(pos + 1) % active.length] + 1;
     }
 
     // ===== UI HELPERS =====
@@ -1651,8 +1626,6 @@
       area2.classList.toggle('active', state.currentPlayer === 2 && !state.playerOut[1]);
       area1.classList.toggle('out', state.playerOut[0]);
       area2.classList.toggle('out', state.playerOut[1]);
-      area1.classList.toggle('frozen', state.frozenPlayer === 1);
-      area2.classList.toggle('frozen', state.frozenPlayer === 2);
 
       // Scores
       document.getElementById('score1').textContent = p1.score;
@@ -1661,8 +1634,8 @@
       // Round scores
       const rs1 = document.getElementById('roundScore1');
       const rs2 = document.getElementById('roundScore2');
-      rs1.textContent = (state.state === 'playing' && state.currentPlayer === 1 && p1.hand.length > 0) ? '\u672c\u8f6e\u9884\u4f30: ' + calculateRoundScore(0) + '\u5206' : '';
-      rs2.textContent = (state.state === 'playing' && state.currentPlayer === 2 && p2.hand.length > 0) ? '\u672c\u8f6e\u9884\u4f30: ' + calculateRoundScore(1) + '\u5206' : '';
+      rs1.textContent = p1.hand.length > 0 ? '\u672c\u8f6e\u9884\u4f30: ' + calculateRoundScore(0) + '\u5206' : '';
+      rs2.textContent = p2.hand.length > 0 ? '\u672c\u8f6e\u9884\u4f30: ' + calculateRoundScore(1) + '\u5206' : '';
 
       // Hands
       document.getElementById('hand1').innerHTML = p1.hand.map(c => miniCardHTML(c)).join('');
@@ -1700,6 +1673,7 @@
         var cls = 'history-chip';
         if (h.bust) cls += ' bust';
         else if (h.flip7) cls += ' flip7';
+        else if (h.freezeEnd) cls += ' freeze-end';
         else if (h.revive) cls += ' revive';
         else if (h.special) cls += ' special';
         return '<span class="' + cls + '">' + h.text + '</span>';
@@ -1810,31 +1784,33 @@
         state.discard.push(card);
         const active = getActivePlayers();
         if (active.length <= 1) {
-          // Only 1 player left, freeze is useless, discard and continue
           showToast('\u51bb\u7ed3\u724c\u65e0\u6548\uff01\u53ea\u6709\u4e00\u4f4d\u73a9\u5bb6\u6d3b\u8dc3');
           state.roundNumber++;
           state.state = 'waiting';
           render();
           return;
         }
-        // Show freeze target selection UI
         const targets = active.filter(i => i !== playerIdx);
         showFreezeTargetSelection(targets, function (targetIdx) {
-          state.frozenPlayer = targetIdx + 1;
-          state.roundNumber++;
-          state.state = 'waiting';
-          render();
-          // Show frozen state visibly before skipping
-          showToast('\u795e\u51bb\u4e86 P' + (targetIdx + 1) + '!\u8d70\u524d\u7684\u73a9\u5bb6\u5c06\u88ab\u8df3\u8fc7');
+          const otherIdx = targetIdx;
+          const otherPlayer = state.players[otherIdx];
+          const otherScore = calculateRoundScore(otherIdx);
+          otherPlayer.score += otherScore;
+          state.discard.push.apply(state.discard, otherPlayer.hand);
+          otherPlayer.hand = [];
+          state.history.push({
+            round: state.roundNumber, playerId: targetIdx + 1,
+            cards: [], score: otherScore, bust: false, special: false, flip7: false,
+            freezeEnd: true,
+            text: 'P' + (targetIdx + 1) + ' \u51bb\u7ed3\u7ed3\u675f +' + otherScore + '\u5206'
+          });
+          showToast('\u51bb\u7ed3\u4e86 P' + (targetIdx + 1) + '!\u7ed3\u7b97 +' + otherScore + '\u5206\uff0c\u5f00\u59cb\u65b0\u4e00\u8f6e');
+          showRoundNotify('\u7b2c ' + state.roundNumber + ' \u56de\u5408\u7ed3\u675f\uff01', 'end');
           setTimeout(function () {
-            state.frozenPlayer = null;
-            const nextActive = getActivePlayers();
-            const frozenPos = nextActive.indexOf(targetIdx);
-            if (frozenPos >= 0 && nextActive.length > 1) {
-              state.currentPlayer = nextActive[(frozenPos + 1) % nextActive.length] + 1;
-            }
+            startNewRound();
             render();
-          }, 600);
+            showRoundNotify('\u7b2c ' + state.roundNumber + ' \u56de\u5408\u5f00\u59cb\uff01', 'start');
+          }, 1500);
         });
         return;
       }
@@ -1983,7 +1959,6 @@
       }
       state.playerOut = [false, false];
       state.firstOut = null;
-      state.frozenPlayer = null;
       state.roundNumber++;
       state.totalFlipsThisRound = 0;
       state.state = 'waiting';

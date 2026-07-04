@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Flip 7</title>
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <div class="game-container">
+    <div class="top-bar">
+      <div class="title">FLIP 7</div>
+      <div class="buttons">
+        <button class="btn-icon" id="btnRules" title="规则">📖</button>
+        <button class="btn-icon" id="btnReset" title="重置">🔄</button>
+      </div>
+    </div>
+
+    <div class="round-info" id="roundInfo">第 1 回合</div>
+
+    <div class="player-area" id="playerArea1">
+      <div class="player-header">
+        <div class="avatar p1">P1</div>
+        <div class="player-info">
+          <div class="player-name">玩家 1</div>
+          <div class="player-score"><span>总分 </span><span id="score1">0</span></div>
+          <div class="round-score" id="roundScore1"></div>
+        </div>
+      </div>
+      <div class="hand-label">手牌 <span id="handCount1">(0张)</span></div>
+      <div class="hand" id="hand1"></div>
+    </div>
+
+    <div class="center-area">
+      <div class="piles">
+        <div class="pile">
+          <div class="deck-visual"><div class="deck-back"></div></div>
+          <div class="pile-count" id="deckCount">0</div>
+          <div class="pile-label">牌堆</div>
+        </div>
+        <div style="font-size:20px;color:var(--text-muted)">⇄</div>
+        <div class="pile">
+          <div class="discard-visual" id="discardVisual"><span>弃牌堆</span></div>
+          <div class="pile-count" id="discardCount">0</div>
+          <div class="pile-label">弃牌堆</div>
+        </div>
+      </div>
+
+      <div class="flip-area" id="flipArea">
+        <div class="flip-placeholder" id="flipPlaceholder">点击 GO 翻牌</div>
+        <div class="flip-card-container" id="flipCard" style="display:none">
+          <div class="flip-card-back"></div>
+          <div class="flip-card-front" id="flipCardFront"></div>
+        </div>
+      </div>
+
+      <div class="actions" id="actions">
+        <button class="btn btn-go" id="btnGo">GO 翻牌</button>
+        <button class="btn btn-stop" id="btnStop">STOP</button>
+      </div>
+    </div>
+
+    <div class="player-area" id="playerArea2">
+      <div class="player-header">
+        <div class="avatar p2">P2</div>
+        <div class="player-info">
+          <div class="player-name">玩家 2</div>
+          <div class="player-score"><span>总分 </span><span id="score2">0</span></div>
+          <div class="round-score" id="roundScore2"></div>
+        </div>
+      </div>
+      <div class="hand-label">手牌 <span id="handCount2">(0张)</span></div>
+      <div class="hand" id="hand2"></div>
+    </div>
+
+    <div class="history-area">
+      <div class="history-title">翻牌记录</div>
+      <div class="history-chips" id="historyChips"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="rulesModal">
+    <div class="modal">
+      <button class="close-btn" id="btnRulesClose">✕</button>
+      <h2>📖 游戏规则</h2>
+      <h3>🎯 游戏目标</h3>
+      <p>率先获得 <strong>200分</strong> 的玩家获胜。</p>
+      <h3>🃏 卡牌组成（88张）</h3>
+      <p><strong>数字卡（79张）：</strong></p>
+      <ul>
+        <li>数字 0：1张</li>
+        <li>数字 1-12：每种数字的张数 = 13 - 该数字（如12有1张，11有2张...1有12张）</li>
+      </ul>
+      <p><strong>特殊卡（6张）：</strong></p>
+      <ul>
+        <li><strong>+2</strong>（1张）：本回合得分 +2</li>
+        <li><strong>+4</strong>（1张）：本回合得分 +4</li>
+        <li><strong>+6</strong>（1张）：本回合得分 +6</li>
+        <li><strong>+8</strong>（1张）：本回合得分 +8</li>
+        <li><strong>+10</strong>（1张）：本回合得分 +10</li>
+        <li><strong>x2</strong>（1张）：将本回合手牌总分 ×2 作为最终得分</li>
+      </ul>
+      <p><strong>行动牌（10张）：</strong></p>
+      <ul>
+        <li><strong>冻结</strong>（10张）：对一名其他玩家使用，立即结算其本轮得分并结束本轮</li>
+      </ul>
+      <p><strong>功能牌（10张）：</strong></p>
+      <ul>
+        <li><strong>复活</strong>（10张）：手牌中存在时，可在判负时抵消一次判负</li>
+      </ul>
+      <h3>🎮 回合流程</h3>
+      <ul>
+        <li>轮到你时，点击 <strong>GO 翻牌</strong> 从牌堆顶翻一张牌</li>
+        <li><strong>数字卡：</strong>如果翻到的数字与你手牌中已有的数字重复 → <strong>判负（BUST）</strong>；若手牌中有复活牌，则消耗一张复活牌抵消</li>
+        <li><strong>特殊卡：</strong>永远不会判负，特殊效果直接生效</li>
+        <li><strong>行动卡（冻结）：</strong>选择一名其他玩家，立即结算其本轮得分并结束本轮</li>
+        <li>翻牌后可以选择继续翻或点击 <strong>STOP</strong> 结束回合</li>
+        <li>STOP 时，得分 = 手牌数字总和 + 特殊卡效果</li>
+      </ul>
+      <h3>⚡ x2 卡牌说明</h3>
+      <p>x2 的计算方式：先将本回合所有手牌分数加总，结果 ×2 即为本回合最终得分。</p>
+      <p>例：手牌有 5 + 8 + x2 → (5+8) × 2 = 26分</p>
+      <h3>🌟 Flip 7</h3>
+      <p>在一回合中，如果你的手牌达到 <strong>7张</strong>（数字卡+特殊卡），立即获得 <strong>+15分</strong> 奖励，回合结束。</p>
+      <h3>♻️ 牌堆循环</h3>
+      <p>当牌堆耗尽时，自动将弃牌堆洗牌重新放入牌堆。</p>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script type="module">
+    import { createInitialState } from './scripts/data.js';
+    import { calculateRoundScore, checkWinner, getActivePlayers, switchToNextPlayer } from './scripts/utils.js';
+    import { autoRefillDeck, startNewRound, handleGo, handleStop, afterFlip } from './scripts/game.js';
+    import { render, showFlipCard, hideFlipCard, flyCardToHand, showToast, showBustEffect, showFlip7Effect, showWinResult, showRoundNotify, showFreezeTargetSelection, initRulesModal, showRules as uiShowRules, hideRules as uiHideRules } from './scripts/ui.js';
+
+    let state = createInitialState();
+
+    window.handleGo = () => {
+      handleGo(state, {
+        render, showFlipCard, hideFlipCard, flyCardToHand, showToast,
+        showBustEffect, showFlip7Effect, showWinResult, showRoundNotify,
+        showFreezeTargetSelection, autoRefillDeck
+      });
+    };
+    window.handleStop = () => {
+      handleStop(state, {
+        render, hideFlipCard, showToast, showRoundNotify, showWinResult
+      }, calculateRoundScore);
+    };
+    window.resetGame = () => {
+      state = createInitialState();
+      render(state);
+      showToast('新游戏已开始！');
+      showRoundNotify('第 1 回合开始！', 'start');
+    };
+    window.__resetGame = window.resetGame;
+    window.showRules = uiShowRules;
+    window.hideRules = uiHideRules;
+
+    document.getElementById('btnGo').addEventListener('click', window.handleGo);
+    document.getElementById('btnStop').addEventListener('click', window.handleStop);
+    document.getElementById('btnReset').addEventListener('click', window.resetGame);
+    document.getElementById('btnRules').addEventListener('click', window.showRules);
+    document.getElementById('btnRulesClose').addEventListener('click', window.hideRules);
+    initRulesModal();
+
+    render(state);
+    showRoundNotify('第 1 回合开始！', 'start');
+  </script>
+</body>
+</html>
