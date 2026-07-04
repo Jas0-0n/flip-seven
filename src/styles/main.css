@@ -261,6 +261,35 @@
       overflow: hidden;
     }
 
+    .mini-card-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 4px;
+      display: block;
+    }
+
+    .flip-card-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 12px;
+      display: block;
+    }
+
+    .flying-card-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 12px;
+      display: block;
+    }
+
+    .card-value-text {
+      font-size: 12px;
+      font-weight: 700;
+    }
+
     .mini-card::before {
       content: '';
       position: absolute;
@@ -285,6 +314,21 @@
       position: relative;
       z-index: 1;
     }
+
+    /* ===== NUMBER CARD COLORS ===== */
+    .card-n0  { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #78350f; border-color: #d97706; }
+    .card-n1  { background: linear-gradient(135deg, #84cc16, #65a30d); color: #365314; border-color: #4d7c0f; }
+    .card-n2  { background: linear-gradient(135deg, #22d3ee, #06b6d4); color: #164e63; border-color: #0891b2; }
+    .card-n3  { background: linear-gradient(135deg, #3b82f6, #2563eb); color: #eff6ff; border-color: #1d4ed8; }
+    .card-n4  { background: linear-gradient(135deg, #818cf8, #6366f1); color: #eef2ff; border-color: #4f46e5; }
+    .card-n5  { background: linear-gradient(135deg, #a78bfa, #8b5cf6); color: #fff; border-color: #7c3aed; }
+    .card-n6  { background: linear-gradient(135deg, #c084fc, #a855f7); color: #fff; border-color: #9333ea; }
+    .card-n7  { background: linear-gradient(135deg, #e879f9, #d946ef); color: #fff; border-color: #c026d3; }
+    .card-n8  { background: linear-gradient(135deg, #f472b6, #ec4899); color: #fff; border-color: #db2777; }
+    .card-n9  { background: linear-gradient(135deg, #fb7185, #f43f5e); color: #fff; border-color: #e11d48; }
+    .card-n10 { background: linear-gradient(135deg, #f87171, #ef4444); color: #fff; border-color: #dc2626; }
+    .card-n11 { background: linear-gradient(135deg, #fb923c, #f97316); color: #7c2d12; border-color: #ea580c; }
+    .card-n12 { background: linear-gradient(135deg, #facc15, #eab308); color: #713f12; border-color: #ca8a04; }
 
     /* Card colors - 3D style */
     .card-v0 {
@@ -578,6 +622,16 @@
       height: 126px;
       z-index: 999;
       pointer-events: none;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      background: linear-gradient(135deg, #1e293b, #334155);
+      color: #f1f5f9;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
       transition: left 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94),
         top 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
     }

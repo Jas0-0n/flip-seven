@@ -162,7 +162,7 @@
 
     document.getElementById('btnGo').addEventListener('click', window.handleGo);
     document.getElementById('btnStop').addEventListener('click', window.handleStop);
-    document.getElementById('btnReset').addEventListener('click', window.resetGame);
+    document.getElementById('btnReset').addEventListener('click', function() { location.reload(); });
     document.getElementById('btnRules').addEventListener('click', window.showRules);
     document.getElementById('btnRulesClose').addEventListener('click', window.hideRules);
     initRulesModal();

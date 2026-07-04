@@ -1,27 +1,43 @@
+// ============================================================
+// data.js — 牌组构建 + 初始状态
+// ============================================================
+import { GAME_CONFIG } from './config.js';
+
+/**
+ * 根据 GAME_CONFIG 构建牌组（数据驱动）
+ * @returns {Array} 卡牌数组
+ */
 export function buildDeck() {
-  let deck = [];
+  const cfg = GAME_CONFIG.deck;
+  const deck = [];
   let id = 0;
-  for (let v = 0; v <= 12; v++) {
-    let count = v === 0 ? 1 : v;
+
+  // 数字卡
+  for (let v = 0; v <= cfg.numberMax; v++) {
+    const count = v === 0 ? 1 : v;
     for (let i = 0; i < count; i++) {
       deck.push({ type: 'number', value: v, effect: null, id: 'n' + (id++) });
     }
   }
-  deck.push({ type: 'special', value: '+2', effect: 2, id: 'sp2' });
-  deck.push({ type: 'special', value: '+4', effect: 4, id: 'sp4' });
-  deck.push({ type: 'special', value: '+6', effect: 6, id: 'sp6' });
-  deck.push({ type: 'special', value: '+8', effect: 8, id: 'sp8' });
-  deck.push({ type: 'special', value: '+10', effect: 10, id: 'sp10' });
-  deck.push({ type: 'special', value: 'x2', effect: 'double', id: 'spx2' });
-  for (let i = 1; i <= 3; i++) {
-    deck.push({ type: 'action', value: 'freeze', effect: 'freeze', id: 'af' + i });
+
+  // 特殊卡
+  for (const sp of cfg.specials) {
+    deck.push({ type: 'special', value: sp.value, effect: sp.effect, id: 'sp' + sp.value });
   }
-  for (let i = 1; i <= 3; i++) {
-    deck.push({ type: 'action', value: 'flipthree', effect: 'flipthree', id: 'at' + i });
+
+  // 行动牌
+  for (const key of Object.keys(cfg.actions)) {
+    const action = cfg.actions[key];
+    for (let i = 0; i < action.count; i++) {
+      deck.push({ type: 'action', value: action.value, effect: action.effect, id: key[0] + 'f' + i });
+    }
   }
-  for (let i = 1; i <= 3; i++) {
-    deck.push({ type: 'revive', value: 'revive', effect: 'revive', id: 'rv' + i });
+
+  // 功能牌
+  for (let i = 0; i < cfg.revives.count; i++) {
+    deck.push({ type: 'revive', value: cfg.revives.value, effect: cfg.revives.effect, id: 'rv' + i });
   }
+
   return deck;
 }
 
@@ -34,11 +50,13 @@ export function shuffle(arr) {
 }
 
 export function createInitialState() {
+  const cfg = GAME_CONFIG;
   return {
-    players: [
-      { id: 1, hand: [], score: 0 },
-      { id: 2, hand: [], score: 0 }
-    ],
+    players: Array.from({ length: cfg.playerCount }, (_, i) => ({
+      id: i + 1,
+      hand: [],
+      score: 0
+    })),
     currentPlayer: Math.random() < 0.5 ? 1 : 2,
     state: 'waiting',
     deck: shuffle(buildDeck()),
@@ -47,7 +65,7 @@ export function createInitialState() {
     totalFlipsThisRound: 0,
     history: [],
     flipAnimating: false,
-    playerOut: [false, false],
+    playerOut: Array(cfg.playerCount).fill(false),
     firstOut: null
   };
 }

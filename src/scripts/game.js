@@ -1,38 +1,66 @@
 import { createInitialState, shuffle } from './data.js';
 import { calculateRoundScore, checkWinner, getActivePlayers, switchToNextPlayer } from './utils.js';
+import { GAME_CONFIG, BOUNDS } from './config.js';
 
 export { createInitialState, shuffle, calculateRoundScore, checkWinner, getActivePlayers, switchToNextPlayer };
 
 // ===== ROUND MANAGEMENT =====
 
+/**
+ * 开始新回合
+ * @param {Object} state - 游戏状态
+ * @edge state.firstOut 为空 → 另一玩家先手
+ * @edge state.firstOut 存在 → 该玩家先手（奖励机制）
+ */
 export function startNewRound(state) {
+  // 防御: 确保 playerOut 长度正确
+  if (!state.playerOut || state.playerOut.length !== GAME_CONFIG.playerCount) {
+    state.playerOut = Array(GAME_CONFIG.playerCount).fill(false);
+  }
+
   // First player to leave this round gets first turn next round
-  if (state.firstOut !== null) {
+  if (state.firstOut !== null && state.firstOut >= 1 && state.firstOut <= GAME_CONFIG.playerCount) {
     state.currentPlayer = state.firstOut;
   } else {
     // Flip7: no one left → other player starts
     state.currentPlayer = state.currentPlayer === 1 ? 2 : 1;
   }
-  state.playerOut = [false, false];
+  state.playerOut.fill(false);
   state.firstOut = null;
   state.roundNumber++;
   state.totalFlipsThisRound = 0;
   state.state = 'waiting';
 }
 
+/**
+ * 结束当前回合
+ * @param {Object} state - 游戏状态
+ * @param {Object} ui - UI 回调对象
+ * @edge state 为空 → 直接返回
+ */
 function endRound(state, ui) {
+  if (!state || !ui) return;
   if (ui.showRoundNotify) ui.showRoundNotify('第 ' + state.roundNumber + ' 回合结束！', 'end');
   startNewRound(state);
   if (ui.render) ui.render(state);
   if (ui.showToast) ui.showToast('本回合结束，进入下一回合！');
   setTimeout(function () {
     if (ui.showRoundNotify) ui.showRoundNotify('第 ' + state.roundNumber + ' 回合开始！', 'start');
-  }, 750);
+  }, GAME_CONFIG.animation.endRoundNotifyDelay * 1000);
 }
 
 // ===== HELPERS =====
 
+/**
+ * 牌堆为空时从弃牌堆补充
+ * @param {Object} state - 游戏状态
+ * @param {Function} showToast - Toast 回调
+ * @edge state.deck 不存在 → 初始化为空数组
+ * @edge state.discard 不存在 → 不补充
+ */
 export function autoRefillDeck(state, showToast) {
+  if (!state.deck) state.deck = [];
+  if (!state.discard) state.discard = [];
   if (state.deck.length === 0 && state.discard.length > 0) {
     state.deck = shuffle([...state.discard]);
     state.discard = [];
@@ -40,7 +68,21 @@ export function autoRefillDeck(state, showToast) {
   }
 }
 
+/**
+ * 结算玩家回合
+ * @param {Object} state - 游戏状态
+ * @param {number} playerIdx - 玩家索引 (0-based)
+ * @returns {Object} { score, cards }
+ * @edge playerIdx 超出范围 → 返回 { score: 0, cards: [] }
+ * @edge state.players[playerIdx] 不存在 → 返回 { score: 0, cards: [] }
+ */
 export function settleRound(state, playerIdx) {
+  if (playerIdx < BOUNDS.minPlayerIdx || playerIdx > BOUNDS.maxPlayerIdx) {
+    return { score: 0, cards: [] };
+  }
+  if (!state.players || !state.players[playerIdx]) {
+    return { score: 0, cards: [] };
+  }
   const score = calculateRoundScore(state, playerIdx);
   const player = state.players[playerIdx];
   player.score += score;
@@ -48,6 +90,37 @@ export function settleRound(state, playerIdx) {
 }
 
 // ===== CORE: afterFlip =====
+
+/**
+ * 翻牌后核心处理（最重要的一致性保障点）
+ *
+ * ═══════════════════════════════════════════════════════════════
+ * 边界场景文档
+ * ═══════════════════════════════════════════════════════════════
+ *
+ * [正常流程]
+ * 1. 翻到数字卡 → 检查重复 → 不重复 → 加入手牌 → 换人
+ * 2. 翻到特殊卡 → 加入手牌 → 检查 7 张数字 → 换人
+ * 3. 翻到行动卡(冻结) → 冻结目标 → 结算目标 → 结束/换人
+ * 4. 翻到行动卡(翻三张) → 发 3 张 → 结算暂存 → 切换
+ * 5. 翻到功能牌(复活) → 加入手牌 → 换人
+ *
+ * [极端错误操作 + 兜底]
+ * 1. playerIdx 越界 → 直接返回，不处理（由调用方保证）
+ * 2. card.type 非法 → 当作特殊卡处理（副作用最小）
+ * 3. 手牌长度 > 13 → 仍可正常游戏（数字卡最多 13 种不同）
+ * 4. 牌堆空 + 同时触发翻牌 → autoRefillDeck 先补充
+ * 5. 复活牌 + 同时翻到重复数字 → 复活优先消耗，不判负
+ * 6. 翻三张过程中翻到冻结 + 只剩 1 人 → 冻结牌作废丢弃
+ * 7. 翻三张过程中目标爆牌 → 暂存牌全部作废，立即停止
+ * 8. 翻三张过程中触发七连翻 → 暂存牌进弃牌堆，回合结束
+ * 9. 冻结对自己使用 → 不允许，目标列表排除自己
+ * 10. 翻三张对自己使用 → 允许，结算后切换到对手
+ * 11. 翻三张结算暂存时链式触发 → 3 张发完后继续结算剩余暂存
+ * 12. currentPlayer 超出范围 → 由 switchToNextPlayer 防御
+ * 13. state.deck / state.discard 为 null → autoRefillDeck 防御初始化
+ * ═══════════════════════════════════════════════════════════════
+ */
 
 export function afterFlip(state, card, playerIdx, ui) {
   state.flipAnimating = false;
@@ -175,8 +248,8 @@ export function afterFlip(state, card, playerIdx, ui) {
   player.hand.push(card);
 
   // --- FLIP 7 CHECK: 7 cards → both out, round ends ---
-  if (player.hand.filter(function (c) { return c.type === 'number'; }).length >= 7) {
-    var bonus = calculateRoundScore(state, playerIdx) + 15;
+  if (player.hand.filter(function (c) { return c.type === 'number'; }).length >= GAME_CONFIG.rules.flipSevenThreshold) {
+    var bonus = calculateRoundScore(state, playerIdx) + GAME_CONFIG.rules.flipSevenBonus;
     player.score += bonus;
     state.discard.push.apply(state.discard, player.hand);
     player.hand = [];
@@ -250,7 +323,7 @@ function handleFlipThree(state, card, playerIdx, ui) {
 }
 
 function dealThreeCards(state, targetIdx, originalPlayerIdx, ui, count, queuedCards) {
-  if (count >= 3) {
+  if (count >= GAME_CONFIG.rules.flipThreeCount) {
     resolveQueuedCards(state, targetIdx, originalPlayerIdx, ui, queuedCards);
     return;
   }
@@ -334,9 +407,9 @@ function dealSingleFlipThreeCard(state, targetIdx, originalPlayerIdx, ui, count,
   target.hand.push(card);
 
   var numberCards = target.hand.filter(function (c) { return c.type === 'number'; });
-  if (numberCards.length >= 7) {
+  if (numberCards.length >= GAME_CONFIG.rules.flipSevenThreshold) {
     state.discard.push.apply(state.discard, queuedCards);
-    var bonus = calculateRoundScore(state, targetIdx) + 15;
+    var bonus = calculateRoundScore(state, targetIdx) + GAME_CONFIG.rules.flipSevenBonus;
     target.score += bonus;
     state.discard.push.apply(state.discard, target.hand);
     target.hand = [];
@@ -452,6 +525,30 @@ function endFlipThreeSequence(state, targetIdx, originalPlayerIdx, ui) {
 
 // ===== ACTIONS =====
 
+/**
+ * 玩家点击 "GO 翻牌"
+ * @param {Object} state - 游戏状态
+ * @param {Object} ui - UI 回调
+ *
+ * ═══════════════════════════════════════════════════════════════
+ * 边界场景文档
+ * ═══════════════════════════════════════════════════════════════
+ *
+ * [正常流程]
+ * 1. 非 ended / 非 flipAnimating → 翻一张牌
+ * 2. 牌堆空 → 从弃牌堆补充 → 再翻
+ * 3. 补充后仍空 → Toast 提示 "牌堆已空"，不翻牌
+ *
+ * [极端错误操作 + 兜底]
+ * 1. state.state === 'ended' → 直接返回，不做任何事
+ * 2. state.flipAnimating === true → 直接返回，防止动画期间重复点击
+ * 3. state.deck 为 null → autoRefillDeck 防御初始化
+ * 4. state.discard 为 null → autoRefillDeck 不补充
+ * 5. ui.showFlipCard 为空 → 跳过动画，直接调用 afterFlip
+ * 6. ui.flyCardToHand 为空 → 跳过飞牌，直接调用 afterFlip
+ * 7. 翻牌过程中浏览器失去响应 → flipAnimating 状态下按钮 disabled
+ * ═══════════════════════════════════════════════════════════════
+ */
 export function handleGo(state, ui) {
   if (state.state === 'ended' || state.flipAnimating) return;
   autoRefillDeck(state, ui.showToast);
@@ -482,6 +579,31 @@ export function handleGo(state, ui) {
   }
 }
 
+/**
+ * 玩家点击 "STOP 结算"
+ * @param {Object} state - 游戏状态
+ * @param {Object} ui - UI 回调
+ *
+ * ═══════════════════════════════════════════════════════════════
+ * 边界场景文档
+ * ═══════════════════════════════════════════════════════════════
+ *
+ * [正常流程]
+ * 1. 手牌非空 → 结算得分 → 标记玩家出局 → 检查胜利/结束回合/换人
+ * 2. 所有玩家出局 → endRound
+ * 3. 只剩 1 人 → 该玩家继续
+ * 4. 多人存活 → switchToNextPlayer
+ *
+ * [极端错误操作 + 兜底]
+ * 1. state.flipAnimating === true → 直接返回，防止动画期间结算
+ * 2. state.state === 'ended' → 直接返回
+ * 3. player.hand.length === 0 → Toast 提示 "手牌为空"，不结算
+ * 4. 结算后分数溢出（超过 Number.MAX_SAFE_INTEGER）→ 不可能发生，分数上限低
+ * 5. checkWinner 返回 true → 立即结束游戏，不再切换玩家
+ * 6. settleRound 中 playerIdx 越界 → 返回 { score: 0, cards: [] }
+ * 7. state.players 为空 → 由 getActivePlayers / settleRound 防御
+ * ═══════════════════════════════════════════════════════════════
+ */
 export function handleStop(state, ui) {
   if (state.flipAnimating || state.state === 'ended') return;
   var playerIdx = state.currentPlayer - 1;

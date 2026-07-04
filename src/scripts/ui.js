@@ -1,29 +1,22 @@
-import { calculateRoundScore } from './utils.js';
-import { autoRefillDeck } from './game.js';
+// ============================================================
+// ui.js — DOM 渲染 / 动画 / 弹窗
+// ============================================================
+import { GAME_CONFIG, CARD_IMAGES } from './config.js';
 
-export function showToast(msg) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 1000);
+const A = GAME_CONFIG.animation;
+
+// ===== 图片映射辅助 =====
+
+function cardImageKey(card) {
+  if (card.type === 'number') return 'number-' + card.value;
+  return card.value;
 }
 
-export function cardClass(card) {
-  if (card.type === 'number') return 'card-v' + card.value;
-  const v = card.value;
-  if (v === '+2') return 'card-sp-plus2';
-  if (v === '+4') return 'card-sp-plus4';
-  if (v === '+6') return 'card-sp-plus6';
-  if (v === '+8') return 'card-sp-plus8';
-  if (v === '+10') return 'card-sp-plus10';
-  if (v === 'x2') return 'card-sp-x2';
-  if (card.type === 'action') {
-    if (card.effect === 'flipthree') return 'card-action-flipthree';
-    return 'card-action-freeze';
-  }
-  if (card.type === 'revive') return 'card-revive';
-  return 'card-v0';
+function cardImageSrc(card) {
+  return CARD_IMAGES[cardImageKey(card)] || '';
 }
+
+// ===== 辅助函数 =====
 
 function cardLabel(card) {
   if (card.type === 'number') return '\u6570\u5b57';
@@ -32,24 +25,59 @@ function cardLabel(card) {
   return '\u7279\u6b8a';
 }
 
-export function miniCardHTML(card) {
-  const label = cardLabel(card);
-  return '<div class="mini-card ' + cardClass(card) + '">' +
-    '<span class="card-label">' + label + '</span>' +
-    '<span class="card-value">' + card.value + '</span></div>';
+function cardClass(card) {
+  const v = card.value;
+  if (card.type === 'number') return 'card-n' + v;
+  if (card.type === 'special') {
+    if (v === '+2') return 'card-sp-plus2';
+    if (v === '+4') return 'card-sp-plus4';
+    if (v === '+6') return 'card-sp-plus6';
+    if (v === '+8') return 'card-sp-plus8';
+    if (v === '+10') return 'card-sp-plus10';
+    if (v === 'x2') return 'card-sp-x2';
+  }
+  if (card.type === 'action') {
+    if (card.effect === 'flipthree') return 'card-action-flipthree';
+    return 'card-action-freeze';
+  }
+  if (card.type === 'revive') return 'card-revive';
+  return 'card-v0';
 }
 
+export function miniCardHTML(card) {
+  const src = cardImageSrc(card);
+  const fallback = cardLabel(card);
+  return '<div class="mini-card ' + cardClass(card) + '">' +
+    (src
+      ? '<img src="' + src + '" alt="' + fallback + '" class="mini-card-img" />'
+      : '<span class="card-value-text">' + fallback + '</span>') +
+    '</div>';
+}
+
+// ===== 翻转卡片 =====
+
+/**
+ * 展示翻牌动画
+ * @param {Object} card - 卡牌对象
+ * @param {Function} onDone - 回调
+ * @edge card 为空 → 不显示
+ * @edge onDone 为空 → 不回调
+ */
 export function showFlipCard(card, onDone) {
+  if (!card) return;
   const flipCard = document.getElementById('flipCard');
   const placeholder = document.getElementById('flipPlaceholder');
-  const front = document.getElementById('flipCardFront');
+  const front = flipCard.querySelector('.flip-card-front');
 
+  flipCard.style.display = 'flex';
   front.className = 'flip-card-front ' + cardClass(card);
-  front.innerHTML = '<span class="flip-label">' + cardLabel(card) + '</span><span class="flip-value">' + card.value + '</span>';
+  
+  const src = cardImageSrc(card);
+  front.innerHTML = src
+    ? '<img src="' + src + '" alt="card" class="flip-card-img" />'
+    : '<span class="card-value-text">' + cardLabel(card) + '</span>';
 
   placeholder.style.display = 'none';
-  flipCard.style.display = '';
-
   flipCard.className = 'flip-card-container';
   void flipCard.offsetWidth;
   flipCard.classList.add('flipped');
@@ -58,9 +86,9 @@ export function showFlipCard(card, onDone) {
     flipCard.className = 'flip-card-container flipped';
     void flipCard.offsetWidth;
     flipCard.classList.add('pop');
-  }, 250);
+  }, A.flipToFront * 1000);
 
-  setTimeout(onDone, 350);
+  setTimeout(onDone || function () {}, A.flipCallback * 1000);
 }
 
 export function hideFlipCard() {
@@ -71,179 +99,224 @@ export function hideFlipCard() {
   placeholder.style.display = '';
 }
 
+/**
+ * 飞行到手牌动画
+ * @param {Object} card - 卡牌对象
+ * @param {number} playerIdx - 目标玩家索引
+ * @param {Function} onDone - 回调
+ */
 export function flyCardToHand(card, playerIdx, onDone) {
-  const flipCard = document.getElementById('flipCard');
-  const target = document.getElementById('hand' + (playerIdx + 1));
-
-  const srcRect = flipCard.getBoundingClientRect();
-  const tgtRect = target.getBoundingClientRect();
-
   const fly = document.createElement('div');
-  fly.className = 'mini-card ' + cardClass(card);
-  fly.style.position = 'fixed';
-  fly.style.left = srcRect.left + 'px';
-  fly.style.top = srcRect.top + 'px';
+  fly.className = 'flying-card ' + cardClass(card);
+
+  const handRect = document.getElementById('hand' + (playerIdx + 1)).getBoundingClientRect();
+  const flipRect = document.getElementById('flipCard').getBoundingClientRect();
+
+  // 起点：翻牌区域中心
+  const startX = flipRect.left + flipRect.width / 2 - 45;
+  const startY = flipRect.top + flipRect.height / 2 - 63;
+  // 终点：手牌区域中心
+  const endX = handRect.left + handRect.width / 2 - 45;
+  const endY = handRect.top + handRect.height / 2 - 63;
+
+  fly.style.left = startX + 'px';
+  fly.style.top = startY + 'px';
   fly.style.width = '90px';
   fly.style.height = '126px';
   fly.style.zIndex = '999';
   fly.style.pointerEvents = 'none';
-  fly.style.transition = 'left 0.175s cubic-bezier(0.25,0.46,0.45,0.94), top 0.175s cubic-bezier(0.25,0.46,0.45,0.94)';
-  fly.innerHTML = '<span class="card-label">' + cardLabel(card) + '</span><span class="card-value">' + card.value + '</span>';
+  fly.style.transition = 'left ' + A.flyTransition + 's cubic-bezier(0.25,0.46,0.45,0.94), top ' + A.flyTransition + 's cubic-bezier(0.25,0.46,0.45,0.94)';
+  fly.innerHTML = '<img src="' + cardImageSrc(card) + '" alt="card" class="flying-card-img" />';
   document.body.appendChild(fly);
 
   hideFlipCard();
+
+  // 强制重排，触发从起点到终点的过渡
   void fly.offsetWidth;
-  fly.style.left = (tgtRect.left + tgtRect.width / 2 - 45) + 'px';
-  fly.style.top = (tgtRect.top + tgtRect.height / 2 - 63) + 'px';
+  fly.style.left = endX + 'px';
+  fly.style.top = endY + 'px';
 
   setTimeout(function () {
     fly.style.transition = 'none';
-    fly.style.animation = 'card-fly 0.125s ease-in forwards';
+    fly.style.animation = 'card-fly ' + A.flyImplode + 's ease-in forwards';
     setTimeout(function () {
       fly.remove();
-      onDone();
-    }, 125);
-  }, 175);
+      if (onDone) onDone();
+    }, A.flyImplode * 1000);
+  }, A.flyTransition * 1000);
 }
+
+// ===== 渲染 =====
 
 export function render(state) {
-  autoRefillDeck(state, showToast);
-  const p1 = state.players[0], p2 = state.players[1];
-
-  document.getElementById('roundInfo').textContent = '\u7b2c ' + state.roundNumber + ' \u56de\u5408';
-
-  const area1 = document.getElementById('playerArea1');
-  const area2 = document.getElementById('playerArea2');
-  area1.classList.toggle('active', state.currentPlayer === 1 && !state.playerOut[0]);
-  area2.classList.toggle('active', state.currentPlayer === 2 && !state.playerOut[1]);
-  area1.classList.toggle('out', state.playerOut[0]);
-  area2.classList.toggle('out', state.playerOut[1]);
-
-  document.getElementById('score1').textContent = p1.score;
-  document.getElementById('score2').textContent = p2.score;
-
-  const rs1 = document.getElementById('roundScore1');
-  const rs2 = document.getElementById('roundScore2');
-  rs1.textContent = p1.hand.length > 0 ? '\u672c\u8f6e\u9884\u4f30: ' + calculateRoundScore(state, 0) + '\u5206' : '';
-  rs2.textContent = p2.hand.length > 0 ? '\u672c\u8f6e\u9884\u4f30: ' + calculateRoundScore(state, 1) + '\u5206' : '';
-
-  document.getElementById('hand1').innerHTML = p1.hand.map(c => miniCardHTML(c)).join('');
-  document.getElementById('hand2').innerHTML = p2.hand.map(c => miniCardHTML(c)).join('');
-  document.getElementById('handCount1').textContent = '(' + p1.hand.length + '\u5f39)';
-  document.getElementById('handCount2').textContent = '(' + p2.hand.length + '\u5f39)';
-
+  document.getElementById('roundInfo').textContent = '第 ' + state.roundNumber + ' 回合';
   document.getElementById('deckCount').textContent = state.deck.length;
   document.getElementById('discardCount').textContent = state.discard.length;
-  const dv = document.getElementById('discardVisual');
-  if (state.discard.length > 0) {
-    dv.innerHTML = miniCardHTML(state.discard[state.discard.length - 1]);
-    dv.style.border = 'none'; dv.style.background = 'none';
-  } else {
-    dv.innerHTML = '<span>\u5f03\u724c\u5806</span>';
-    dv.style.border = '2px dashed var(--text-muted)'; dv.style.background = 'var(--bg-surface)';
-  }
 
-  const btnGo = document.getElementById('btnGo');
-  const btnStop = document.getElementById('btnStop');
+  state.players.forEach(function (player, i) {
+    const playerNum = i + 1;
+    const hand = document.getElementById('hand' + playerNum);
+    const score = document.getElementById('score' + playerNum);
+    const handCount = document.getElementById('handCount' + playerNum);
+    const playerArea = document.getElementById('playerArea' + playerNum);
+
+    hand.innerHTML = player.hand.map(miniCardHTML).join('');
+    score.textContent = player.score;
+    handCount.textContent = '(' + player.hand.length + '张)';
+
+    if (state.currentPlayer === playerNum && state.state !== 'ended') {
+      playerArea.classList.add('active');
+    } else {
+      playerArea.classList.remove('active');
+    }
+
+    if (state.playerOut[i]) {
+      hand.style.opacity = '0.3';
+      hand.style.filter = 'grayscale(1)';
+    } else {
+      hand.style.opacity = '1';
+      hand.style.filter = 'none';
+    }
+  });
+
+  const goBtn = document.getElementById('btnGo');
+  const stopBtn = document.getElementById('btnStop');
+
   if (state.state === 'ended') {
-    btnGo.style.display = 'none'; btnStop.style.display = 'none';
+    goBtn.disabled = true;
+    stopBtn.disabled = true;
+    goBtn.style.display = 'none';
+    stopBtn.style.display = 'none';
+  } else if (state.flipAnimating || state.state === 'playing') {
+    goBtn.disabled = true;
+    stopBtn.disabled = true;
   } else {
-    btnGo.style.display = ''; btnStop.style.display = '';
-    const canAct = !state.flipAnimating;
-    btnGo.disabled = !canAct;
-    btnStop.disabled = !canAct;
-    btnGo.textContent = 'GO \u7ffb\u724c';
+    goBtn.disabled = false;
+    stopBtn.disabled = false;
+    goBtn.style.display = '';
+    stopBtn.style.display = '';
+    const curIdx = state.currentPlayer - 1;
+    if (state.players[curIdx] && state.players[curIdx].hand.length === 0) {
+      stopBtn.disabled = true;
+    }
   }
 
-  document.getElementById('historyChips').innerHTML = state.history.slice(-12).map(function (h) {
-    var cls = 'history-chip';
-    if (h.bust) cls += ' bust';
-    else if (h.flip7) cls += ' flip7';
-    else if (h.freezeEnd) cls += ' freeze-end';
-    else if (h.revive) cls += ' revive';
-    else if (h.special) cls += ' special';
-    return '<span class="' + cls + '">' + h.text + '</span>';
-  }).join('');
+  // ===== 翻牌记录 =====
+  var historyEl = document.getElementById('historyChips');
+  if (historyEl) {
+    historyEl.innerHTML = state.history.slice(-12).map(function (h) {
+      var cls = 'history-chip';
+      if (h.bust) cls += ' bust';
+      else if (h.flip7) cls += ' flip7';
+      else if (h.freezeEnd) cls += ' freeze-end';
+      else if (h.revive) cls += ' revive';
+      else if (h.special) cls += ' special';
+      return '<span class="' + cls + '">' + h.text + '</span>';
+    }).join('');
+  }
 }
 
+// ===== 通知 =====
+
+export function showToast(msg) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(function () { el.classList.add('show'); }, 10);
+  setTimeout(function () { el.classList.remove('show'); }, A.toast * 1000);
+}
+
+/**
+ * 回合通知
+ * @param {string} text - 通知文字
+ * @param {string} type - 'start' 或 'end'
+ */
 export function showRoundNotify(text, type) {
   const el = document.createElement('div');
   el.className = 'round-notify ' + type;
   el.textContent = text;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 1100);
+  setTimeout(function () { el.remove(); }, A.roundNotifyRemove * 1000);
 }
+
+// ===== Bust 特效 =====
 
 export function showBustEffect() {
   document.body.classList.add('shake');
-  setTimeout(() => document.body.classList.remove('shake'), 250);
+  setTimeout(function () { document.body.classList.remove('shake'); }, A.bustShake * 1000);
+
   const overlay = document.createElement('div');
   overlay.className = 'bust-overlay';
   document.body.appendChild(overlay);
-  setTimeout(() => overlay.remove(), 250);
+  setTimeout(function () { overlay.remove(); }, A.bustOverlayRemove * 1000);
+
   const text = document.createElement('div');
   text.className = 'bust-text';
   text.textContent = '💥 BUST!';
   document.body.appendChild(text);
-  setTimeout(() => text.remove(), 600);
+  setTimeout(function () { text.remove(); }, A.bustTextRemove * 1000);
+
   if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
 }
+
+// ===== Flip 7 特效 =====
 
 export function showFlip7Effect() {
   const overlay = document.createElement('div');
   overlay.className = 'flip7-overlay';
-  overlay.innerHTML = '<div class="flip7-text">\u2b50 FLIP 7!</div>';
+  overlay.innerHTML = '<div class="flip7-text">⭐ FLIP 7!</div>';
   document.body.appendChild(overlay);
-  setTimeout(() => overlay.remove(), 1250);
+  setTimeout(function () { overlay.remove(); }, A.flip7OverlayRemove * 1000);
+
   for (let i = 0; i < 30; i++) {
     const piece = document.createElement('div');
-    piece.className = 'confetti-piece';
-    piece.style.left = Math.random() * 100 + 'vw';
-    piece.style.top = '-10px';
-    piece.style.background = ['#fbbf24', '#f59e0b', '#3b82f6', '#10b981', '#ec4899', '#a855f7'][Math.floor(Math.random() * 6)];
-    piece.style.width = (Math.random() * 8 + 6) + 'px';
-    piece.style.height = (Math.random() * 8 + 6) + 'px';
-    piece.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
+    piece.className = 'confetti';
+    piece.style.left = (Math.random() * 100) + 'vw';
     piece.style.animation = 'confetti-fall ' + (Math.random() * 1.5 + 1) + 's linear ' + (Math.random() * 0.5) + 's forwards';
     document.body.appendChild(piece);
-    setTimeout(() => piece.remove(), 1500);
+    setTimeout(function () { piece.remove(); }, A.confettiRemove * 1000);
   }
   if (navigator.vibrate) navigator.vibrate([50, 30, 50, 30, 50, 30, 100]);
 }
 
-export function showWinResult(state, winner) {
-  const loser = winner === 1 ? 2 : 1;
-  const wScore = state.players[winner - 1].score;
-  const lScore = state.players[loser - 1].score;
-  for (let i = 0; i < 40; i++) {
-    const piece = document.createElement('div');
-    piece.className = 'confetti-piece';
-    piece.style.left = Math.random() * 100 + 'vw';
-    piece.style.top = '-10px';
-    piece.style.background = ['#fbbf24', '#f59e0b', '#d97706', '#fcd34d'][Math.floor(Math.random() * 4)];
-    piece.style.width = (Math.random() * 10 + 6) + 'px';
-    piece.style.height = (Math.random() * 10 + 6) + 'px';
-    piece.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
-    piece.style.animation = 'confetti-fall ' + (Math.random() * 2 + 1.5) + 's linear ' + (Math.random() * 1) + 's forwards';
-    document.body.appendChild(piece);
-  }
+// ===== 胜利弹窗 =====
+
+/**
+ * 显示胜利结果
+ * @param {Object} state - 游戏状态
+ * @param {number} winnerId - 获胜玩家 ID (1-based)
+ * @edge state 为空 → 不显示
+ * @edge winnerId 不合法 → 不显示
+ */
+export function showWinResult(state, winnerId) {
+  if (!state || !winnerId) return;
   const overlay = document.createElement('div');
-  overlay.className = 'result-overlay win';
-  overlay.innerHTML = '<div class="result-text">\ud83c\udfc6 \u80dc\u5229!</div><div class="result-score">\u73a9\u5bb6 ' + winner + ' \u83b7\u80dc\uff01 (' + wScore + '\u5206 vs ' + lScore + '\u5206)</div><div class="result-buttons"><button class="btn btn-go" onclick="window.__resetGame(); this.parentElement.parentElement.remove();">\u518d\u6765\u4e00\u5c40</button></div>';
+  overlay.className = 'modal-overlay win-overlay show';
+  const winnerIdx = winnerId - 1;
+  const score = (state.players && state.players[winnerIdx]) ? state.players[winnerIdx].score : 0;
+  overlay.innerHTML = '<div class="modal win-modal">' +
+    '<h1 class="win-title">🎉 玩家 ' + winnerId + ' 获胜！</h1>' +
+    '<p class="win-score">最终得分：' + score + '分</p>' +
+    '<button class="primary-btn" onclick="location.reload()">再来一局</button>' +
+    '</div>';
   document.body.appendChild(overlay);
-  if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200, 100, 300]);
 }
 
-export function showRules() { document.getElementById('rulesModal').classList.add('show'); }
-export function hideRules() { document.getElementById('rulesModal').classList.remove('show'); }
-export function initRulesModal() {
-  document.getElementById('rulesModal').addEventListener('click', function (e) { if (e.target === this) hideRules(); });
-}
+// ===== 冻结目标选择 =====
 
+/**
+ * 显示冻结目标选择弹窗
+ * @param {Array<number>} targets - 可选择的玩家索引数组
+ * @param {Function} onSelect - 选择回调
+ * @edge targets 为空 → 不显示
+ * @edge onSelect 为空 → 不回调
+ */
 export function showFreezeTargetSelection(targets, onSelect) {
+  if (!targets || targets.length === 0) return;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay freeze-selection-overlay show';
-  let html = '<div class="modal"><h2>❄️ 选择冻结目标</h2><p>选择要冻结的玩家：</p><div class="freeze-targets">';
+  let html = '<div class="modal"><h2>🧊 选择冻结目标</h2><p>选择要冻结的玩家：</p><div class="freeze-targets">';
   targets.forEach(function (idx) {
     html += '<div class="freeze-target" data-idx="' + idx + '"><div class="freeze-target-name">玩家 ' + (idx + 1) + '</div></div>';
   });
@@ -254,12 +327,22 @@ export function showFreezeTargetSelection(targets, onSelect) {
     el.addEventListener('click', function () {
       const targetIdx = parseInt(this.getAttribute('data-idx'));
       overlay.remove();
-      onSelect(targetIdx);
+      if (onSelect) onSelect(targetIdx);
     });
   });
 }
 
+// ===== 翻三张目标选择 =====
+
+/**
+ * 显示翻三张目标选择弹窗
+ * @param {Array<number>} targets - 可选择的玩家索引数组
+ * @param {Function} onSelect - 选择回调
+ * @edge targets 为空 → 不显示
+ * @edge onSelect 为空 → 不回调
+ */
 export function showFlipThreeTargetSelection(targets, onSelect) {
+  if (!targets || targets.length === 0) return;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay freeze-selection-overlay show';
   let html = '<div class="modal"><h2>🔄 选择翻三张目标</h2><p>选择要翻三张的玩家：</p><div class="freeze-targets">';
@@ -273,7 +356,37 @@ export function showFlipThreeTargetSelection(targets, onSelect) {
     el.addEventListener('click', function () {
       const targetIdx = parseInt(this.getAttribute('data-idx'));
       overlay.remove();
-      onSelect(targetIdx);
+      if (onSelect) onSelect(targetIdx);
     });
   });
+}
+
+// ===== 规则弹窗 =====
+
+export function showRules() {
+  const overlay = document.getElementById('rulesModal');
+  if (overlay) overlay.classList.add('show');
+}
+
+export function hideRules() {
+  const overlay = document.getElementById('rulesModal');
+  if (overlay) overlay.classList.remove('show');
+}
+
+export function initRulesModal() {
+  const rulesBtn = document.getElementById('rulesBtn');
+  const rulesModal = document.getElementById('rulesModal');
+  const rulesClose = document.getElementById('rulesClose');
+
+  if (rulesBtn) {
+    rulesBtn.addEventListener('click', showRules);
+  }
+  if (rulesClose) {
+    rulesClose.addEventListener('click', hideRules);
+  }
+  if (rulesModal) {
+    rulesModal.addEventListener('click', function (e) {
+      if (e.target === rulesModal) hideRules();
+    });
+  }
 }
