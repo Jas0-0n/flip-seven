@@ -412,6 +412,13 @@
       box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
     }
 
+    .card-action-freeze {
+      background: linear-gradient(135deg, #e879f9, #c084fc, #a855f7);
+      color: #1e1b4b;
+      border-color: #a855f7;
+      box-shadow: 0 0 8px rgba(168, 85, 247, 0.5);
+    }
+
     /* ===== CENTER AREA ===== */
     .center-area {
       background: var(--bg-card);
@@ -1089,6 +1096,63 @@
       display: flex;
     }
 
+    .freeze-selection-overlay.show {
+      align-items: flex-end;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.6);
+    }
+
+    .freeze-targets {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .freeze-target {
+      flex: 1 1 120px;
+      max-width: 180px;
+      background: var(--bg-surface);
+      border: 2px solid transparent;
+      border-radius: var(--radius);
+      padding: 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: var(--text-primary);
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .freeze-target:hover {
+      border-color: #a855f7;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(168, 85, 247, 0.35);
+    }
+
+    .freeze-target-name {
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .player-area.frozen {
+      border-color: #a855f7 !important;
+      box-shadow: 0 0 18px rgba(168, 85, 247, 0.4) !important;
+    }
+
+    .player-area.frozen::before {
+      content: '❄️ 冻结中';
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      font-size: 12px;
+      background: rgba(168, 85, 247, 0.2);
+      color: #e879f9;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(168, 85, 247, 0.5);
+    }
+
     .modal {
       background: var(--bg-card);
       border-radius: var(--radius);
@@ -1280,6 +1344,7 @@
       <div class="actions" id="actions">
         <button class="btn btn-go" id="btnGo" onclick="handleGo()">GO 翻牌</button>
         <button class="btn btn-stop" id="btnStop" onclick="handleStop()">STOP</button>
+        <button class="btn btn-test" id="btnTestFreeze" onclick="testFreeze()" style="margin-top:8px;background:#7c3aed;color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;">🧪 测试 Freeze</button>
       </div>
     </div>
 
@@ -1372,6 +1437,9 @@
       deck.push({ type: 'special', value: '+8', effect: 8, id: 'sp8' });
       deck.push({ type: 'special', value: '+10', effect: 10, id: 'sp10' });
       deck.push({ type: 'special', value: 'x2', effect: 'double', id: 'spx2' });
+      deck.push({ type: 'action', value: 'freeze', effect: 'freeze', id: 'af1' });
+      deck.push({ type: 'action', value: 'freeze', effect: 'freeze', id: 'af2' });
+      deck.push({ type: 'action', value: 'freeze', effect: 'freeze', id: 'af3' });
       return deck;
     }
 
@@ -1398,7 +1466,8 @@
         history: [],
         flipAnimating: false,
         playerOut: [false, false],
-        firstOut: null
+        firstOut: null,
+        frozenPlayer: null
       };
     }
 
@@ -1441,7 +1510,13 @@
       if (active.length <= 1) return;
       const curIdx = state.currentPlayer - 1;
       const pos = active.indexOf(curIdx);
-      state.currentPlayer = active[(pos + 1) % active.length] + 1;
+      let next = active[(pos + 1) % active.length] + 1;
+      // Frozen player skip: if next player is frozen, skip them
+      if (next === state.frozenPlayer) {
+        state.frozenPlayer = null;
+        next = active[(pos + 2) % active.length] + 1;
+      }
+      state.currentPlayer = next;
     }
 
     // ===== UI HELPERS =====
@@ -1461,12 +1536,14 @@
       if (v === '+8') return 'card-sp-plus8';
       if (v === '+10') return 'card-sp-plus10';
       if (v === 'x2') return 'card-sp-x2';
+      if (card.type === 'action') return 'card-action-freeze';
       return 'card-v0';
     }
 
     function miniCardHTML(card) {
+      const label = card.type === 'number' ? '\u6570\u5b57' : (card.type === 'action' ? '\u884c\u52a8' : '\u7279\u6b8a');
       return '<div class="mini-card ' + cardClass(card) + '">' +
-        '<span class="card-label">' + (card.type === 'number' ? '\u6570\u5b57' : '\u7279\u6b8a') + '</span>' +
+        '<span class="card-label">' + label + '</span>' +
         '<span class="card-value">' + card.value + '</span></div>';
     }
 
@@ -1477,7 +1554,7 @@
       var front = document.getElementById('flipCardFront');
 
       front.className = 'flip-card-front ' + cardClass(card);
-      front.innerHTML = '<span class="flip-label">' + (card.type === 'number' ? '\u6570\u5b57' : '\u7279\u6b8a') + '</span><span class="flip-value">' + card.value + '</span>';
+      front.innerHTML = '<span class="flip-label">' + (card.type === 'number' ? '\u6570\u5b57' : (card.type === 'action' ? '\u884c\u52a8' : '\u7279\u6b8a')) + '</span><span class="flip-value">' + card.value + '</span>';
 
       placeholder.style.display = 'none';
       flipCard.style.display = '';
@@ -1565,6 +1642,8 @@
       area2.classList.toggle('active', state.currentPlayer === 2 && !state.playerOut[1]);
       area1.classList.toggle('out', state.playerOut[0]);
       area2.classList.toggle('out', state.playerOut[1]);
+      area1.classList.toggle('frozen', state.frozenPlayer === 1);
+      area2.classList.toggle('frozen', state.frozenPlayer === 2);
 
       // Scores
       document.getElementById('score1').textContent = p1.score;
@@ -1694,6 +1773,40 @@
         state.state = 'waiting';
         render();
         showBustEffect();
+        return;
+      }
+
+      // --- ACTION CARD: FREEZE ---
+      if (card.type === 'action' && card.effect === 'freeze') {
+        state.discard.push(card);
+        const active = getActivePlayers();
+        if (active.length <= 1) {
+          // Only 1 player left, freeze is useless, discard and continue
+          showToast('\u51bb\u7ed3\u724c\u65e0\u6548\uff01\u53ea\u6709\u4e00\u4f4d\u73a9\u5bb6\u6d3b\u8dc3');
+          state.roundNumber++;
+          state.state = 'waiting';
+          render();
+          return;
+        }
+        // Show freeze target selection UI
+        const targets = active.filter(i => i !== playerIdx);
+        showFreezeTargetSelection(targets, function (targetIdx) {
+          state.frozenPlayer = targetIdx + 1;
+          state.roundNumber++;
+          state.state = 'waiting';
+          render();
+          // Show frozen state visibly before skipping
+          showToast('\u795e\u51bb\u4e86 P' + (targetIdx + 1) + '!\u8d70\u524d\u7684\u73a9\u5bb6\u5c06\u88ab\u8df3\u8fc7');
+          setTimeout(function () {
+            state.frozenPlayer = null;
+            const nextActive = getActivePlayers();
+            const frozenPos = nextActive.indexOf(targetIdx);
+            if (frozenPos >= 0 && nextActive.length > 1) {
+              state.currentPlayer = nextActive[(frozenPos + 1) % nextActive.length] + 1;
+            }
+            render();
+          }, 600);
+        });
         return;
       }
 
@@ -1841,6 +1954,7 @@
       }
       state.playerOut = [false, false];
       state.firstOut = null;
+      state.frozenPlayer = null;
       state.roundNumber++;
       state.totalFlipsThisRound = 0;
       state.state = 'waiting';
@@ -1919,6 +2033,32 @@
     function showRules() { document.getElementById('rulesModal').classList.add('show'); }
     function hideRules() { document.getElementById('rulesModal').classList.remove('show'); }
     document.getElementById('rulesModal').addEventListener('click', function (e) { if (e.target === this) hideRules(); });
+
+    // ===== FREEZE TARGET SELECTION =====
+    function showFreezeTargetSelection(targets, onSelect) {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay freeze-selection-overlay show';
+      let html = '<div class="modal"><h2>❄️ 选择冻结目标</h2><p>选择要冻结的玩家：</p><div class="freeze-targets">';
+      targets.forEach(function (idx) {
+        html += '<div class="freeze-target" data-idx="' + idx + '"><div class="freeze-target-name">玩家 ' + (idx + 1) + '</div></div>';
+      });
+      html += '</div></div>';
+      overlay.innerHTML = html;
+      document.body.appendChild(overlay);
+      overlay.querySelectorAll('.freeze-target').forEach(function (el) {
+        el.addEventListener('click', function () {
+          const targetIdx = parseInt(this.getAttribute('data-idx'));
+          overlay.remove();
+          onSelect(targetIdx);
+        });
+      });
+    }
+
+    function testFreeze() {
+      // Force a freeze card into current player's hand for testing
+      const freezeCard = { type: 'action', value: 'freeze', effect: 'freeze', id: 'test-freeze' };
+      afterFlip(freezeCard, state.currentPlayer - 1);
+    }
 
     // ===== INIT =====
     resetGame();
