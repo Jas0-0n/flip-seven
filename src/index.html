@@ -1,97 +1,132 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Flip 7</title>
-  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="./styles/main.css" />
 </head>
 <body>
-  <div class="game-container">
-    <div class="top-bar">
-      <div class="title">FLIP 7</div>
-      <div class="buttons">
-        <button class="btn-icon" id="btnRules" title="规则">📖</button>
-        <button class="btn-icon" id="btnReset" title="重置">🔄</button>
+  <!-- ===== 大厅视图 ===== -->
+  <div class="view view-lobby" id="view-lobby">
+    <div class="lobby-container">
+      <div class="lobby-header">
+        <h1 class="lobby-title">FLIP 7</h1>
+        <p class="lobby-subtitle">多人联机扑克</p>
+      </div>
+
+      <div class="lobby-form">
+        <!-- 公共：昵称 -->
+        <div class="form-group">
+          <label>你的昵称</label>
+          <input type="text" id="nickname" placeholder="输入昵称" maxlength="12" />
+        </div>
+
+        <!-- 公共：身份选择 -->
+        <div class="form-group">
+          <label>你的身份</label>
+          <div class="role-select" id="roleSelect">
+            <button class="btn-role active" data-role="host">房主</button>
+            <button class="btn-role" data-role="player">玩家</button>
+          </div>
+        </div>
+
+        <!-- 房主专属：人数选择 -->
+        <div class="form-group" id="hostOptions">
+          <label>玩家人数</label>
+          <div class="player-count-select">
+            <button class="btn-count" data-count="2">2人</button>
+            <button class="btn-count" data-count="3">3人</button>
+            <button class="btn-count active" data-count="4">4人</button>
+          </div>
+        </div>
+
+        <!-- 输入房间码 -->
+        <div class="form-group">
+          <label>房间码</label>
+          <input type="text" id="roomCodeInput" placeholder="6位数字" maxlength="6" pattern="[0-9]*" />
+          <div class="room-code-hint" id="roomCodeHint">房主设定 / 玩家输入</div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <button class="btn btn-create" id="btnCreateRoom">创建房间</button>
+        <button class="btn btn-join" id="btnJoinRoom" style="display:none">加入房间</button>
       </div>
     </div>
+  </div>
 
-    <div class="round-info" id="roundInfo">第 1 回合</div>
-
-    <div class="player-area" id="playerArea1">
-      <div class="player-header">
-        <div class="avatar p1">P1</div>
-        <div class="player-info">
-          <div class="player-name">玩家 1</div>
-          <div class="player-score"><span>总分 </span><span id="score1">0</span></div>
-          <div class="round-score" id="roundScore1"></div>
+  <!-- ===== 房间 Lobby 视图 ===== -->
+  <div class="view view-room" id="view-room" style="display:none">
+    <div class="room-container">
+      <div class="room-header">
+        <div class="room-code-display">
+          <span class="room-code-label">房间码</span>
+          <span class="room-code-value" id="roomCodeDisplay">------</span>
+          <button class="btn-copy" id="btnCopyCode" title="复制">📋</button>
         </div>
+        <span class="room-status" id="roomStatus">等待中...</span>
       </div>
-      <div class="hand-label">手牌 <span id="handCount1">(0张)</span></div>
-      <div class="hand" id="hand1"></div>
-    </div>
-
-    <div class="center-area">
-      <div class="piles">
-        <div class="pile">
-          <div class="deck-visual"><div class="deck-back"></div></div>
-          <div class="pile-count" id="deckCount">0</div>
-          <div class="pile-label">牌堆</div>
-        </div>
-        <div style="font-size:20px;color:var(--text-muted)">⇄</div>
-        <div class="pile">
-          <div class="discard-visual" id="discardVisual"><span>弃牌堆</span></div>
-          <div class="pile-count" id="discardCount">0</div>
-          <div class="pile-label">弃牌堆</div>
-        </div>
-      </div>
-
-      <div class="flip-area" id="flipArea">
-        <div class="flip-placeholder" id="flipPlaceholder">点击 GO 翻牌</div>
-        <div class="flip-card-container" id="flipCard" style="display:none">
-          <div class="flip-card-back"></div>
-          <div class="flip-card-front" id="flipCardFront"></div>
-        </div>
-      </div>
-
-      <div class="actions" id="actions">
-        <button class="btn btn-go" id="btnGo">GO 翻牌</button>
-        <button class="btn btn-stop" id="btnStop">STOP</button>
+      <div class="room-players" id="roomPlayers"></div>
+      <div class="room-actions">
+        <button class="btn btn-start" id="btnStartGame" style="display:none">开始游戏</button>
+        <button class="btn btn-leave" id="btnLeaveRoom">离开房间</button>
       </div>
     </div>
+  </div>
 
-    <div class="player-area" id="playerArea2">
-      <div class="player-header">
-        <div class="avatar p2">P2</div>
-        <div class="player-info">
-          <div class="player-name">玩家 2</div>
-          <div class="player-score"><span>总分 </span><span id="score2">0</span></div>
-          <div class="round-score" id="roundScore2"></div>
+  <!-- ===== 游戏视图 ===== -->
+  <div class="view view-game" id="view-game" style="display:none">
+    <div class="game-container">
+
+      <div class="round-info" id="roundInfo">第 1 回合</div>
+
+      <!-- 动态生成玩家区 -->
+      <div class="player-areas" id="playerAreas"></div>
+
+      <div class="center-area">
+        <div class="piles">
+          <div class="pile">
+            <div class="deck-visual"><div class="deck-back"></div></div>
+            <div class="pile-count" id="deckCount">0</div>
+            <div class="pile-label">牌堆</div>
+          </div>
+          <div style="font-size:20px;color:var(--text-muted)">⇄</div>
+          <div class="pile">
+            <div class="discard-visual" id="discardVisual"><span>弃牌堆</span></div>
+            <div class="pile-count" id="discardCount">0</div>
+            <div class="pile-label">弃牌堆</div>
+          </div>
+        </div>
+
+        <div class="flip-area" id="flipArea">
+          <div class="flip-placeholder" id="flipPlaceholder">点击 GO 翻牌</div>
+          <div class="flip-card-container" id="flipCard" style="display:none">
+            <div class="flip-card-back"></div>
+            <div class="flip-card-front" id="flipCardFront"></div>
+          </div>
+        </div>
+
+        <div class="actions" id="actions">
+          <button class="btn btn-go" id="btnGo">GO 翻牌</button>
+          <button class="btn btn-stop" id="btnStop">STOP</button>
         </div>
       </div>
-      <div class="hand-label">手牌 <span id="handCount2">(0张)</span></div>
-      <div class="hand" id="hand2"></div>
-    </div>
 
-    <div class="history-area">
-      <div class="history-title">翻牌记录</div>
-      <div class="history-chips" id="historyChips"></div>
+      <div class="rules-area">
+        <button class="btn btn-rules" id="btnRules">📖 游戏规则</button>
+        <button class="btn btn-reset" id="btnReset">重新开始</button>
+      </div>
     </div>
   </div>
 
   <div class="modal-overlay" id="rulesModal">
     <div class="modal">
-      <button class="close-btn" id="btnRulesClose">✕</button>
       <h2>📖 游戏规则</h2>
       <h3>🎯 游戏目标</h3>
-      <p>率先获得 <strong>200分</strong> 的玩家获胜。</p>
-      <h3>🃏 卡牌组成（88张）</h3>
-      <p><strong>数字卡（79张）：</strong></p>
-      <ul>
-        <li>数字 0：1张</li>
-        <li>数字 1-12：每种数字的张数 = 13 - 该数字（如12有1张，11有2张...1有12张）</li>
-      </ul>
-      <p><strong>特殊卡（6张）：</strong></p>
+      <p>在每个回合中，通过翻牌收集数字牌得分，<strong>第一个达到 200 分</strong>的玩家获胜。</p>
+      <h3>🃏 卡牌类型</h3>
+      <p><strong>数字卡（75张）：</strong>数字 0~12，每种数字数量不同（0 和 12 各1张，1 和 11 各2张，依此类推，6 有 8 张）。</p>
+      <p><strong>特殊卡（19张）：</strong></p>
       <ul>
         <li><strong>+2</strong>（1张）：本回合得分 +2</li>
         <li><strong>+4</strong>（1张）：本回合得分 +4</li>
@@ -134,41 +169,210 @@
     import { createInitialState } from './scripts/data.js';
     import { calculateRoundScore } from './scripts/utils.js';
     import { handleGo, handleStop } from './scripts/game.js';
-    import { render, showFlipCard, hideFlipCard, flyCardToHand, showToast, showBustEffect, showFlip7Effect, showWinResult, showRoundNotify, showFreezeTargetSelection, showFlipThreeTargetSelection, initRulesModal, showRules as uiShowRules, hideRules as uiHideRules } from './scripts/ui.js';
+    import { GAME_CONFIG } from './scripts/config.js';
+    import { render, renderPlayerAreas, showFlipCard, hideFlipCard, flyCardToHand, showToast, showBustEffect, showFlip7Effect, showWinResult, showRoundNotify, showFreezeTargetSelection, showFlipThreeTargetSelection as uiShowFlipThree, initRulesModal, showRules as uiShowRules, hideRules as uiHideRules, switchView, renderRoomLobby } from './scripts/ui.js';
+    import { createRoomWithCode, joinRoom, toggleReady, leaveRoom, startGame } from './scripts/room.js';
 
-    let state = createInitialState();
+    // ===== 本地持久键 =====
+    const LS_NICKNAME = 'flip7_nickname';
 
-    window.handleGo = () => {
-      handleGo(state, {
-        render, showFlipCard, hideFlipCard, flyCardToHand, showToast,
-        showBustEffect, showFlip7Effect, showWinResult, showRoundNotify,
-        showFreezeTargetSelection, showFlipThreeTargetSelection
+    // ===== 状态 =====
+    let currentRoom = null;
+    let selfId = 0;
+    let currentUserRole = 'host';
+
+    // ===== 动态 UI =====
+    function updateLobbyUI() {
+      var isHost = currentUserRole === 'host';
+      var hostOpts = document.getElementById('hostOptions');
+      var createBtn = document.getElementById('btnCreateRoom');
+      var joinBtn = document.getElementById('btnJoinRoom');
+      var hint = document.getElementById('roomCodeHint');
+
+      if (isHost) {
+        hostOpts.style.display = 'flex';
+        createBtn.style.display = 'block';
+        joinBtn.style.display = 'none';
+        hint.textContent = '请设定 6 位房间码';
+      } else {
+        hostOpts.style.display = 'none';
+        createBtn.style.display = 'none';
+        joinBtn.style.display = 'block';
+        hint.textContent = '输入房主给你的房间码';
+      }
+    }
+
+    // 初始化身份选择
+    document.querySelectorAll('#roleSelect .btn-role').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        currentUserRole = btn.getAttribute('data-role');
+        document.querySelectorAll('#roleSelect .btn-role').forEach(function (b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        updateLobbyUI();
       });
-    };
-    window.handleStop = () => {
-      handleStop(state, {
-        render, hideFlipCard, showToast, showRoundNotify, showWinResult
-      }, calculateRoundScore);
-    };
-    window.resetGame = () => {
-      state = createInitialState();
-      render(state);
-      showToast('新游戏已开始！');
+    });
+
+    // 初始化人数选择
+    document.querySelectorAll('#lobbyPlayerCount .btn-count').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var count = parseInt(btn.getAttribute('data-count'), 10);
+        GAME_CONFIG.playerCount = count;
+        document.querySelectorAll('#lobbyPlayerCount .btn-count').forEach(function (b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+      });
+    });
+
+    // 预填昵称
+    var nick = localStorage.getItem(LS_NICKNAME);
+    if (nick) document.getElementById('nickname').value = nick;
+
+    // ===== 创建房间 =====
+    document.getElementById('btnCreateRoom').addEventListener('click', function () {
+      var nickname = (document.getElementById('nickname').value || '').trim() || '房主';
+      var code = (document.getElementById('roomCodeInput').value || '').trim();
+      localStorage.setItem(LS_NICKNAME, nickname);
+      var count = GAME_CONFIG.playerCount;
+      currentRoom = createRoomWithCode(nickname, count, code);
+      if (!currentRoom) {
+        showToast('房间码需为6位数字或已被占用！');
+        return;
+      }
+      selfId = 0;
+      switchView('room');
+      renderRoomLobby(currentRoom, selfId, onReadyToggle, onStartGame, onLeaveRoom);
+      showToast('房间已创建！');
+    });
+
+    // ===== 加入房间 =====
+    document.getElementById('btnJoinRoom').addEventListener('click', function () {
+      var nickname = (document.getElementById('nickname').value || '').trim() || '玩家';
+      var code = (document.getElementById('roomCodeInput').value || '').trim();
+      localStorage.setItem(LS_NICKNAME, nickname);
+
+      // 本地模拟
+      if (!currentRoom || currentRoom.roomCode !== code) {
+        currentRoom = createRoomWithCode('房主', GAME_CONFIG.playerCount, code);
+      }
+      var result = joinRoom(currentRoom, nickname);
+      if (!result) {
+        showToast('房间已满或房间码错误！');
+        return;
+      }
+      selfId = currentRoom.players.length - 1;
+      switchView('room');
+      renderRoomLobby(currentRoom, selfId, onReadyToggle, onStartGame, onLeaveRoom);
+      showToast('已加入房间！');
+    });
+
+    // ===== 复制房间码 =====
+    document.getElementById('btnCopyCode').addEventListener('click', function () {
+      var code = document.getElementById('roomCodeDisplay').textContent;
+      if (code && code !== '------') {
+        navigator.clipboard.writeText(code).then(function () {
+          showToast('房间码已复制！');
+        }).catch(function () {
+          showToast(code);
+        });
+      }
+    });
+
+    // ===== Lobby 回调 =====
+    function onReadyToggle(playerId) {
+      if (!currentRoom) return;
+      toggleReady(currentRoom, playerId);
+      renderRoomLobby(currentRoom, selfId, onReadyToggle, onStartGame, onLeaveRoom);
+    }
+
+    function onStartGame() {
+      if (!currentRoom) return;
+      if (currentRoom.players.length < currentRoom.playerCount) {
+        showToast('人数不足！');
+        return;
+      }
+      if (!currentRoom.players.every(function (p) { return p.isHost || p.ready; })) {
+        showToast('有玩家尚未准备！');
+        return;
+      }
+      startGame(currentRoom);
+      GAME_CONFIG.playerCount = currentRoom.playerCount;
+      switchView('game');
+      initGameView();
+    }
+
+    function onLeaveRoom() {
+      if (!currentRoom) return;
+      if (selfId >= 0) leaveRoom(currentRoom, selfId);
+      currentRoom = null;
+      switchView('lobby');
+      showToast('已离开房间');
+    }
+
+    // ===== 游戏逻辑 =====
+    function initGameView() {
+      renderPlayerAreas();
+      var gameState = createInitialState();
+
+      window.handleGo = function () {
+        handleGo(gameState, {
+          render, showFlipCard, hideFlipCard, flyCardToHand, showToast,
+          showBustEffect, showFlip7Effect, showWinResult: function () {
+            showWinResult(gameState);
+            addBackToLobbyButton();
+          },
+          showRoundNotify, showFreezeTargetSelection, showFlipThreeTargetSelection: uiShowFlipThree
+        });
+      };
+      window.handleStop = function () {
+        handleStop(gameState, {
+          render, hideFlipCard, showToast, showRoundNotify, showWinResult: function () {
+            showWinResult(gameState);
+            addBackToLobbyButton();
+          }
+        }, calculateRoundScore);
+      };
+      window.resetGame = function () {
+        if (currentRoom) GAME_CONFIG.playerCount = currentRoom.playerCount;
+        gameState = createInitialState();
+        render(gameState);
+        showToast('新游戏已开始！');
+        showRoundNotify('第 1 回合开始！', 'start');
+      };
+
+      document.getElementById('btnGo').addEventListener('click', window.handleGo);
+      document.getElementById('btnStop').addEventListener('click', window.handleStop);
+      document.getElementById('btnReset').addEventListener('click', function () { location.reload(); });
+      document.getElementById('btnRules').addEventListener('click', window.showRules);
+      document.getElementById('btnRulesClose').addEventListener('click', window.hideRules);
+      initRulesModal();
+
+      render(gameState);
       showRoundNotify('第 1 回合开始！', 'start');
-    };
-    window.__resetGame = window.resetGame;
-    window.showRules = uiShowRules;
-    window.hideRules = uiHideRules;
+    }
 
-    document.getElementById('btnGo').addEventListener('click', window.handleGo);
-    document.getElementById('btnStop').addEventListener('click', window.handleStop);
-    document.getElementById('btnReset').addEventListener('click', function() { location.reload(); });
-    document.getElementById('btnRules').addEventListener('click', window.showRules);
-    document.getElementById('btnRulesClose').addEventListener('click', window.hideRules);
-    initRulesModal();
+    function addBackToLobbyButton() {
+      var existing = document.getElementById('btnBackToLobby');
+      if (existing) existing.remove();
+      var actions = document.querySelector('#view-game .room-actions');
+      if (!actions) {
+        actions = document.createElement('div');
+        actions.className = 'room-actions';
+        document.querySelector('#view-game .game-container').appendChild(actions);
+      }
+      var btn = document.createElement('button');
+      btn.id = 'btnBackToLobby';
+      btn.className = 'btn btn-leave';
+      btn.textContent = '返回大厅';
+      btn.style.marginTop = '10px';
+      btn.addEventListener('click', function () {
+        currentRoom = null;
+        switchView('lobby');
+      });
+      actions.appendChild(btn);
+    }
 
-    render(state);
-    showRoundNotify('第 1 回合开始！', 'start');
+    // ===== 启动 =====
+    updateLobbyUI();
+    switchView('lobby');
   </script>
 </body>
 </html>

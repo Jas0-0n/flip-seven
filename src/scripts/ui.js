@@ -2,6 +2,7 @@
 // ui.js — DOM 渲染 / 动画 / 弹窗
 // ============================================================
 import { GAME_CONFIG, CARD_IMAGES } from './config.js';
+import { calculateRoundScore } from './utils.js';
 
 const A = GAME_CONFIG.animation;
 
@@ -52,6 +53,32 @@ export function miniCardHTML(card) {
       ? '<img src="' + src + '" alt="' + fallback + '" class="mini-card-img" />'
       : '<span class="card-value-text">' + fallback + '</span>') +
     '</div>';
+}
+
+// ===== 动态生成玩家区 =====
+
+/**
+ * 根据当前 playerCount 动态生成所有玩家区
+ */
+export function renderPlayerAreas() {
+  const container = document.getElementById('playerAreas');
+  if (!container) return;
+  const count = GAME_CONFIG.playerCount;
+  container.innerHTML = Array.from({ length: count }, (_, i) => {
+    const playerNum = i + 1;
+    return '<div class="player-area p' + playerNum + '" id="playerArea' + playerNum + '">' +
+      '<div class="player-header">' +
+        '<div class="avatar p' + playerNum + '">P' + playerNum + '</div>' +
+        '<div class="player-info">' +
+          '<div class="player-name">玩家 ' + playerNum + '</div>' +
+          '<div class="player-score"><span>总分 </span><span id="score' + playerNum + '">0</span></div>' +
+          '<div class="round-score" id="roundScore' + playerNum + '"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="hand-label">手牌 <span id="handCount' + playerNum + '">(0张)</span></div>' +
+      '<div class="hand" id="hand' + playerNum + '"></div>' +
+    '</div>';
+  }).join('');
 }
 
 // ===== 翻转卡片 =====
@@ -159,10 +186,25 @@ export function render(state) {
     const score = document.getElementById('score' + playerNum);
     const handCount = document.getElementById('handCount' + playerNum);
     const playerArea = document.getElementById('playerArea' + playerNum);
+    const roundScore = document.getElementById('roundScore' + playerNum);
 
     hand.innerHTML = player.hand.map(miniCardHTML).join('');
     score.textContent = player.score;
     handCount.textContent = '(' + player.hand.length + '张)';
+    if (roundScore) {
+      if (!state.playerOut[i]) {
+        // 存活玩家：实时计算当前手牌得分
+        if (player.hand.length === 0) {
+          roundScore.textContent = '本轮: 0分';
+        } else {
+          const liveScore = calculateRoundScore(state, i);
+          roundScore.textContent = '本轮: +' + liveScore + '分';
+        }
+      } else if (state.players[i].roundScore != null) {
+        // 出局玩家：显示固定结算分
+        roundScore.textContent = '本轮: +' + state.players[i].roundScore + '分';
+      }
+    }
 
     if (state.currentPlayer === playerNum && state.state !== 'ended') {
       playerArea.classList.add('active');
@@ -387,6 +429,127 @@ export function initRulesModal() {
   if (rulesModal) {
     rulesModal.addEventListener('click', function (e) {
       if (e.target === rulesModal) hideRules();
+    });
+  }
+}
+
+// ===== 视图切换 =====
+
+/**
+ * 切换到指定视图
+ * @param {string} viewName - 'lobby' | 'room' | 'game'
+ */
+export function switchView(viewName) {
+  document.querySelectorAll('.view').forEach(function (el) {
+    el.style.display = 'none';
+  });
+  const target = document.getElementById('view-' + viewName);
+  if (target) target.style.display = 'block';
+}
+
+// ===== Lobby 渲染 =====
+
+const AVATAR_COLORS = ['p1', 'p2', 'p3', 'p4'];
+
+/**
+ * 渲染房间 Lobby 玩家列表
+ * @param {Object} room - 房间对象
+ * @param {number} selfId - 当前玩家ID
+ * @param {function} onReadyToggle - 准备切换回调
+ * @param {function} onStart - 开始游戏回调
+ * @param {function} onLeave - 离开房间回调
+ */
+export function renderRoomLobby(room, selfId, onReadyToggle, onStart, onLeave) {
+  // 房间码
+  const codeDisplay = document.getElementById('roomCodeDisplay');
+  if (codeDisplay) codeDisplay.textContent = room.roomCode;
+
+  // 房主判断
+  const self = room.players.find(p => p.id === selfId);
+  const isHost = self && self.isHost;
+
+  // 状态文字
+  const statusEl = document.getElementById('roomStatus');
+  if (statusEl) {
+    const allReady = room.players.every(p => p.isHost || p.ready);
+    const notEnough = room.players.length < room.playerCount;
+    if (notEnough) {
+      const need = room.playerCount - room.players.length;
+      statusEl.textContent = '等待 ' + need + ' 位玩家加入...';
+    } else if (allReady) {
+      statusEl.textContent = '所有玩家已准备好！';
+    } else {
+      statusEl.textContent = '等待玩家准备...';
+    }
+  }
+
+  // 渲染玩家列表
+  const container = document.getElementById('roomPlayers');
+  if (!container) return;
+  container.innerHTML = '';
+
+  room.players.forEach(function (player, i) {
+    const avatarCls = AVATAR_COLORS[i % 4];
+    const name = player.nickname || ('玩家 ' + (i + 1));
+
+    let badgeHTML = '';
+    let actionHTML = '';
+
+    if (player.isHost) {
+      badgeHTML = '<span class="room-player-badge host">主持人</span>';
+    } else if (player.ready) {
+      badgeHTML = '<span class="room-player-badge ready">已准备</span>';
+      if (player.id === selfId) {
+        actionHTML = '<button class="room-player-btn ready-toggle" data-id="' + player.id + '">取消准备</button>';
+      }
+    } else {
+      badgeHTML = '<span class="room-player-badge not-ready">未准备</span>';
+      if (player.id === selfId) {
+        actionHTML = '<button class="room-player-btn ready-toggle" data-id="' + player.id + '">准备</button>';
+      }
+    }
+
+    const isSelf = player.id === selfId;
+    const hostCls = player.isHost ? ' host' : '';
+    const selfCls = isSelf ? ' self' : '';
+
+    const html = '<div class="room-player ' + hostCls + selfCls + '">' +
+      '<div class="room-player-info">' +
+        '<div class="room-player-avatar ' + avatarCls + '">' + (i + 1) + '</div>' +
+        '<div class="room-player-name">' + name + '</div>' +
+        badgeHTML +
+      '</div>' +
+      '<div class="room-player-actions">' + actionHTML + '</div>' +
+    '</div>';
+
+    container.innerHTML += html;
+  });
+
+  // 准备按钮事件
+  container.querySelectorAll('.ready-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const pid = parseInt(btn.getAttribute('data-id'));
+      if (onReadyToggle) onReadyToggle(pid);
+    });
+  });
+
+  // 开始按钮可见性（仅房主可见）+ 是否可点击（人数齐全）
+  const startBtn = document.getElementById('btnStartGame');
+  if (startBtn) {
+    startBtn.style.display = isHost ? 'block' : 'none';
+    const canStart = room.players.length >= room.playerCount &&
+      room.players.every(p => p.isHost || p.ready);
+    startBtn.disabled = !canStart;
+  }
+
+  // 离开按钮
+  const leaveBtn = document.getElementById('btnLeaveRoom');
+  if (leaveBtn) {
+    // 移除旧事件（避免重复绑定）
+    const newBtn = leaveBtn.cloneNode(true);
+    leaveBtn.parentNode.replaceChild(newBtn, leaveBtn);
+    newBtn.addEventListener('click', function () {
+      if (onLeave) onLeave();
     });
   }
 }

@@ -22,14 +22,17 @@ export function startNewRound(state) {
   if (state.firstOut !== null && state.firstOut >= 1 && state.firstOut <= GAME_CONFIG.playerCount) {
     state.currentPlayer = state.firstOut;
   } else {
-    // Flip7: no one left → other player starts
-    state.currentPlayer = state.currentPlayer === 1 ? 2 : 1;
+    // No one left → pick the next active player after current
+    var active = getActivePlayers(state);
+    var nextActive = active.filter(function(i) { return i + 1 > state.currentPlayer; })[0];
+    state.currentPlayer = (nextActive !== undefined ? nextActive : active[0]) + 1;
   }
   state.playerOut.fill(false);
   state.firstOut = null;
   state.roundNumber++;
   state.totalFlipsThisRound = 0;
   state.state = 'waiting';
+  state.players.forEach(function (p) { p.roundScore = null; });
 }
 
 /**
@@ -86,6 +89,7 @@ export function settleRound(state, playerIdx) {
   const score = calculateRoundScore(state, playerIdx);
   const player = state.players[playerIdx];
   player.score += score;
+  player.roundScore = score;
   return { score, cards: player.hand.map(function (c) { return c.value; }) };
 }
 
@@ -151,6 +155,7 @@ export function afterFlip(state, card, playerIdx, ui) {
     // --- BUST: player is out ---
     state.discard.push.apply(state.discard, player.hand.concat([card]));
     player.hand = [];
+    player.roundScore = 0;
     state.playerOut[playerIdx] = true;
     if (state.firstOut === null) state.firstOut = state.currentPlayer;
 
@@ -201,6 +206,7 @@ export function afterFlip(state, card, playerIdx, ui) {
         var otherPlayer = state.players[targetIdx];
         var otherScore = calculateRoundScore(state, targetIdx);
         otherPlayer.score += otherScore;
+        otherPlayer.roundScore = otherScore;
         state.discard.push.apply(state.discard, otherPlayer.hand);
         otherPlayer.hand = [];
         state.playerOut[targetIdx] = true;
@@ -251,26 +257,31 @@ export function afterFlip(state, card, playerIdx, ui) {
   if (player.hand.filter(function (c) { return c.type === 'number'; }).length >= GAME_CONFIG.rules.flipSevenThreshold) {
     var bonus = calculateRoundScore(state, playerIdx) + GAME_CONFIG.rules.flipSevenBonus;
     player.score += bonus;
+    player.roundScore = bonus;
     state.discard.push.apply(state.discard, player.hand);
     player.hand = [];
     state.playerOut[playerIdx] = true;
 
-    // Passive settle: other player is also out
-    var otherIdx = playerIdx === 0 ? 1 : 0;
-    var otherPlayer = state.players[otherIdx];
-    if (otherPlayer.hand.length > 0) {
-      var otherScore = calculateRoundScore(state, otherIdx);
-      otherPlayer.score += otherScore;
-      state.history.push({
-        round: state.roundNumber, playerId: otherIdx + 1,
-        cards: otherPlayer.hand.map(function (c) { return c.value; }),
-        score: otherScore, bust: false, special: false, flip7: false,
-        text: 'P' + (otherIdx + 1) + ' 📊 被动结算 +' + otherScore + '分'
-      });
-      state.discard.push.apply(state.discard, otherPlayer.hand);
-      otherPlayer.hand = [];
-    }
-    state.playerOut[otherIdx] = true;
+    // Passive settle: ALL other active players are also out
+    getActivePlayers(state).forEach(function (otherIdx) {
+      if (otherIdx !== playerIdx) {
+        var otherPlayer = state.players[otherIdx];
+        if (otherPlayer.hand.length > 0) {
+          var otherScore = calculateRoundScore(state, otherIdx);
+          otherPlayer.score += otherScore;
+          state.history.push({
+            round: state.roundNumber, playerId: otherIdx + 1,
+            cards: otherPlayer.hand.map(function (c) { return c.value; }),
+            score: otherScore, bust: false, special: false, flip7: false,
+            text: 'P' + (otherIdx + 1) + ' 📊 被动结算 +' + otherScore + '分'
+          });
+          state.discard.push.apply(state.discard, otherPlayer.hand);
+          otherPlayer.hand = [];
+          otherPlayer.roundScore = otherScore;
+        }
+        state.playerOut[otherIdx] = true;
+      }
+    });
     if (state.firstOut === null) state.firstOut = state.currentPlayer;
 
     state.history.push({
@@ -372,6 +383,7 @@ function dealSingleFlipThreeCard(state, targetIdx, originalPlayerIdx, ui, count,
     }
     state.discard.push.apply(state.discard, target.hand.concat([card], queuedCards));
     target.hand = [];
+    target.roundScore = 0;
     state.playerOut[targetIdx] = true;
     if (state.firstOut === null) state.firstOut = targetIdx + 1;
     state.flipAnimating = false;
@@ -411,24 +423,30 @@ function dealSingleFlipThreeCard(state, targetIdx, originalPlayerIdx, ui, count,
     state.discard.push.apply(state.discard, queuedCards);
     var bonus = calculateRoundScore(state, targetIdx) + GAME_CONFIG.rules.flipSevenBonus;
     target.score += bonus;
+    target.roundScore = bonus;
     state.discard.push.apply(state.discard, target.hand);
     target.hand = [];
     state.playerOut[targetIdx] = true;
-    var otherIdx = targetIdx === 0 ? 1 : 0;
-    var otherPlayer = state.players[otherIdx];
-    if (otherPlayer.hand.length > 0) {
-      var otherScore = calculateRoundScore(state, otherIdx);
-      otherPlayer.score += otherScore;
-      state.history.push({
-        round: state.roundNumber, playerId: otherIdx + 1,
-        cards: otherPlayer.hand.map(function (c) { return c.value; }),
-        score: otherScore, bust: false, special: false, flip7: false,
-        text: 'P' + (otherIdx + 1) + ' 📊 被动结算 +' + otherScore + '分'
-      });
-      state.discard.push.apply(state.discard, otherPlayer.hand);
-      otherPlayer.hand = [];
-    }
-    state.playerOut[otherIdx] = true;
+    // Passive settle: ALL other active players are also out
+    getActivePlayers(state).forEach(function (otherIdx) {
+      if (otherIdx !== targetIdx) {
+        var otherPlayer = state.players[otherIdx];
+        if (otherPlayer.hand.length > 0) {
+          var otherScore = calculateRoundScore(state, otherIdx);
+          otherPlayer.score += otherScore;
+          state.history.push({
+            round: state.roundNumber, playerId: otherIdx + 1,
+            cards: otherPlayer.hand.map(function (c) { return c.value; }),
+            score: otherScore, bust: false, special: false, flip7: false,
+            text: 'P' + (otherIdx + 1) + ' 📊 被动结算 +' + otherScore + '分'
+          });
+          state.discard.push.apply(state.discard, otherPlayer.hand);
+          otherPlayer.hand = [];
+          otherPlayer.roundScore = otherScore;
+        }
+        state.playerOut[otherIdx] = true;
+      }
+    });
     if (state.firstOut === null) state.firstOut = targetIdx + 1;
     state.flipAnimating = false;
     state.history.push({
@@ -469,6 +487,7 @@ function resolveQueuedCards(state, targetIdx, originalPlayerIdx, ui, queuedCards
         var frozenPlayer = state.players[freezeTargetIdx];
         var frozenScore = calculateRoundScore(state, freezeTargetIdx);
         frozenPlayer.score += frozenScore;
+        frozenPlayer.roundScore = frozenScore;
         state.discard.push.apply(state.discard, frozenPlayer.hand);
         frozenPlayer.hand = [];
         state.playerOut[freezeTargetIdx] = true;

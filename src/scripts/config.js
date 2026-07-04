@@ -41,7 +41,7 @@ export const GAME_CONFIG = {
     flipSevenThreshold: 7,        // 数字卡 ≥ 7 触发七连翻
     flipSevenBonus: 15,           // 七连翻额外奖励分
     flipThreeCount: 3,            // 翻三张每次发牌数
-    maxPlayers: 2
+    maxPlayers: 4
   },
 
   // ---------- 动画时长（秒）— 当前 ×0.5 测试速度 ----------
@@ -107,7 +107,7 @@ export const CARD_IMAGES = {
 // ---------- 边界约束（防御性编程用） ----------
 export const BOUNDS = {
   minPlayerIdx: 0,
-  maxPlayerIdx: 1,
+  get maxPlayerIdx() { return GAME_CONFIG.playerCount - 1; },
   minCardValue: 0,
   maxCardValue: 12,
   minHandSize: 0,

@@ -55,9 +55,10 @@ export function createInitialState() {
     players: Array.from({ length: cfg.playerCount }, (_, i) => ({
       id: i + 1,
       hand: [],
-      score: 0
+      score: 0,
+      roundScore: null
     })),
-    currentPlayer: Math.random() < 0.5 ? 1 : 2,
+    currentPlayer: Math.floor(Math.random() * cfg.playerCount) + 1,
     state: 'waiting',
     deck: shuffle(buildDeck()),
     discard: [],

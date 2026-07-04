@@ -76,10 +76,22 @@ export function switchToNextPlayer(state) {
 
   const curIdx = state.currentPlayer - 1;
   const pos = active.indexOf(curIdx);
-  // 边界: 当前玩家不在存活列表 → 从第一个开始
+  // 边界: 当前玩家不在存活列表（刚刚被淘汰）
+  // → 找到当前位置之后的下一个存活玩家（循环绕回）
   if (pos === -1) {
-    state.currentPlayer = active[0] + 1;
-    return;
+    for (let i = curIdx + 1; i < GAME_CONFIG.playerCount; i++) {
+      if (!state.playerOut[i]) {
+        state.currentPlayer = i + 1;
+        return;
+      }
+    }
+    for (let i = 0; i < curIdx; i++) {
+      if (!state.playerOut[i]) {
+        state.currentPlayer = i + 1;
+        return;
+      }
+    }
+    return; // 没有存活玩家
   }
   state.currentPlayer = active[(pos + 1) % active.length] + 1;
 }
