@@ -1,0 +1,38 @@
+{
+  "name": "flip-seven-new",
+  "version": "1.0.0",
+  "private": true,
+  "description": "flip-seven-online - Online multiplayer card game",
+  "scripts": {
+    "dev": "node server/dev-server.mjs",
+    "build": "next build",
+    "start": "NODE_ENV=production node server/dev-server.mjs",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "gsap": "^3.15.0",
+    "motion": "^12.42.2",
+    "next": "^14.2.0",
+    "ogl": "^1.0.11",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "tailwind-merge": "^3.6.0",
+    "three": "^0.180.0",
+    "ws": "^8.18.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@types/ws": "^8.5.0",
+    "autoprefixer": "^10.5.2",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^14.2.0",
+    "postcss": "^8.5.16",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.4.0"
+  }
+}

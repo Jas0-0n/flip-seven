@@ -1,24 +1,7 @@
-# Dependencies
-node_modules/
-package-lock.json
-yarn.lock
-
-# OS files
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# IDE
-.vscode/
-.idea/
-
-# Build output
-dist/
-build/
-
-# Logs
-*.log
-
-# Environment
-.env
-.env.local
+/node_modules
+/.next/
+/out/
+/build
+*.tsbuildinfo
+next-env.d.ts
+.env*.local

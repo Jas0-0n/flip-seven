@@ -1,0 +1,386 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        /* ═══ 毛毡桌布（中心游戏区）═══ */
+        --bg-primary: #0f5c5e;       /* 主毛毡 — 深青绿 */
+        --bg-card: #0a4a4d;          /* 毛毡暗区 — 组件底 */
+        --bg-card-hover: #147a7e;    /* 毛毡亮区 — hover */
+
+        /* ═══ 木纹边框（四周包边）═══ */
+        --wood-primary: #8b5e3c;     /* 木纹主色 */
+        --wood-dark: #6b4423;         /* 木纹暗纹 */
+        --wood-light: #c49a6c;        /* 木纹亮纹 */
+
+        /* ═══ 点缀色 ═══ */
+        --accent: #2dd4bf;           /* 青绿 accent */
+        --accent-hover: #14b8a6;
+
+        /* ═══ 文字 ═══ */
+        --text-primary: #f0fdf4;      /* 偏绿的暖白 */
+        --text-secondary: #a7f3d0;    /* 柔和青绿 */
+        --text-muted: #86efac;        /* 暗一点的青绿 */
+
+        /* ═══ 像素风头像色 ═══ */
+        --pixel-gold: #e8b830;
+        --pixel-gold-dark: #b8860b;
+        --pixel-blue: #3060a0;
+        --pixel-red: #c04040;
+        --pixel-green: #40a050;
+        --pixel-purple: #7040a0;
+        --pixel-white: #f0ead6;
+
+        /* 缺失变量（按钮阴影用） */
+        --wood-mid: #7a4f35;           /* 木纹中间色（比 primary 略暗） */
+        --pixel-green-dark: #2d7a38;    /* 像素绿阴影色 */
+        --pixel-red-dark: #8a2e2e;       /* 像素红阴影色 */
+    }
+
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    html {
+        -webkit-text-size-adjust: 100%;
+        touch-action: manipulation;
+    }
+
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        min-height: 100dvh;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+    }
+
+    button {
+        cursor: pointer;
+        border: none;
+        font-family: inherit;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    input {
+        font-family: inherit;
+    }
+}
+
+@layer components {
+    /* ═══ 按钮 ═══ */
+    .btn {
+        @apply px-6 py-3 rounded-xl font-semibold text-base transition-all duration-200 inline-flex items-center justify-center gap-2 min-h-[44px] min-w-[44px] select-none active:scale-95;
+    }
+
+    .btn-primary {
+        @apply bg-accent text-white hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed;
+    }
+
+    .btn-success {
+        @apply bg-green-500 text-white hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed;
+    }
+
+    .btn-ghost {
+        @apply bg-transparent text-text-secondary border border-bg-card-hover hover:bg-bg-card-hover;
+    }
+
+    /* ═══ 输入框 ═══ */
+    .input-field {
+        @apply w-full px-4 py-3 rounded-xl border border-bg-card-hover bg-bg-card text-text-primary text-base outline-none transition-colors duration-200 min-h-[44px] focus:border-accent placeholder:text-text-muted;
+    }
+
+    /* ═══ 通用卡片 ═══ */
+    .card {
+        @apply bg-bg-card border border-bg-card-hover rounded-xl shadow-lg;
+    }
+
+    /* ═══ 木纹边框（游戏区四周）═══ */
+    .wood-frame {
+        border: 14px solid transparent;
+        border-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' fill='%238b5e3c'/%3E%3Cline x1='0' y1='5' x2='60' y2='5' stroke='%23a07850' stroke-width='1.5' opacity='0.6'/%3E%3Cline x1='0' y1='15' x2='60' y2='12' stroke='%236b4423' stroke-width='1' opacity='0.4'/%3E%3Cline x1='0' y1='25' x2='60' y2='28' stroke='%23a07850' stroke-width='2' opacity='0.5'/%3E%3Cline x1='0' y1='38' x2='60' y2='35' stroke='%236b4423' stroke-width='1' opacity='0.6'/%3E%3Cline x1='0' y1='48' x2='60' y2='50' stroke='%23a07850' stroke-width='1.5' opacity='0.4'/%3E%3C/svg%3E") 14 stretch;
+        box-shadow:
+            inset 0 0 12px rgba(0,0,0,0.3),
+            0 4px 20px rgba(0,0,0,0.4);
+    }
+
+    /* ═══ 毛毡纹理叠加（可选） ═══ */
+    .felt-texture {
+        background-image:
+            radial-gradient(ellipse at 20% 50%, rgba(255,255,255,0.02) 0%, transparent 50%),
+            radial-gradient(ellipse at 80% 50%, rgba(0,0,0,0.03) 0%, transparent 50%);
+    }
+
+    /* ═══ 像素风字体 ═══ */
+    .pixel-font {
+        font-family: 'Press Start 2P', monospace;
+        letter-spacing: -1px;
+    }
+
+    /* ═══ 像素风头像 ═══ */
+    .pixel-avatar {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Press Start 2P', monospace;
+        font-size: 10px;
+        font-weight: 700;
+        color: #fff;
+        border-radius: 50%;
+        flex-shrink: 0;
+        border: 2px solid rgba(255,255,255,0.25);
+    }
+    .pixel-avatar.gold-bg { background: var(--pixel-gold); color: var(--wood-dark); }
+    .pixel-avatar.blue-bg { background: var(--pixel-blue); }
+    .pixel-avatar.red-bg { background: var(--pixel-red); }
+    .pixel-avatar.green-bg { background: var(--pixel-green); }
+    .pixel-avatar.purple-bg { background: var(--pixel-purple); }
+
+    @keyframes turnPulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(232,184,48,0); }
+        50%      { box-shadow: 0 0 0 6px rgba(232,184,48,0); }
+    }
+    .turn-active { animation: turnPulse 1.2s ease-in-out infinite; }
+
+    /* ═══ 像素风按钮 (Classic Arcade) ═══ */
+    .btn-arcade {
+        font-family: 'Press Start 2P', monospace;
+        font-size: 13px;
+        padding: 14px 24px;
+        border: 3px solid;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.1s;
+        touch-action: manipulation;
+        position: relative;
+        background: var(--wood-mid);
+        color: var(--pixel-white);
+        border-color: var(--wood-dark);
+        box-shadow: 0 4px 0 var(--wood-dark), 0 6px 12px rgba(0,0,0,0.3);
+    }
+    .btn-arcade:active {
+        box-shadow: 0 1px 0 var(--wood-dark), 0 2px 6px rgba(0,0,0,0.3);
+        transform: translateY(3px);
+    }
+    .btn-arcade-green {
+        background: var(--pixel-green);
+        border-color: var(--pixel-green-dark);
+        color: #fff;
+        box-shadow: 0 4px 0 var(--pixel-green-dark), 0 6px 12px rgba(0,0,0,0.3);
+    }
+    .btn-arcade-green:active {
+        box-shadow: 0 1px 0 var(--pixel-green-dark), 0 2px 6px rgba(0,0,0,0.3);
+        transform: translateY(3px);
+    }
+    .btn-arcade-red {
+        background: var(--pixel-red);
+        border-color: var(--pixel-red-dark);
+        color: #fff;
+        box-shadow: 0 4px 0 var(--pixel-red-dark), 0 6px 12px rgba(0,0,0,0.3);
+    }
+    .btn-arcade-red:active {
+        box-shadow: 0 1px 0 var(--pixel-red-dark), 0 2px 6px rgba(0,0,0,0.3);
+        transform: translateY(3px);
+    }
+    .btn-arcade-soft {
+        background: #e8a0a0;
+        border-color: #c07070;
+        color: #5a2020;
+        box-shadow: 0 4px 0 #c07070, 0 6px 12px rgba(0,0,0,0.25);
+        font-size: 12px;
+        padding: 12px 22px;
+    }
+    .btn-arcade-soft:active {
+        box-shadow: 0 1px 0 #c07070, 0 2px 6px rgba(0,0,0,0.25);
+        transform: translateY(3px);
+    }
+    .btn-arcade-gold {
+        background: var(--pixel-gold);
+        border-color: var(--pixel-gold-dark);
+        color: var(--wood-dark);
+        box-shadow: 0 4px 0 var(--pixel-gold-dark), 0 6px 12px rgba(0,0,0,0.3);
+    }
+    .btn-arcade-gold:active {
+        box-shadow: 0 1px 0 var(--pixel-gold-dark), 0 2px 6px rgba(0,0,0,0.3);
+        transform: translateY(3px);
+    }
+
+    /* GO 圆形修饰 */
+    .btn-circle {
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        font-size: 15px;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* ═══ 卡牌样式（清晰展示图片） ═══ */
+    .px-card {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        border-radius: 10px;
+        overflow: hidden;
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .px-card .px-card-img {
+        width: 100%; height: 100%;
+        object-fit: contain;
+        display: block;
+        overflow: hidden;
+    }
+    .px-card.hoverable {
+        cursor: pointer;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .px-card.hoverable:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+    }
+    .px-card.hoverable:active {
+        transform: translateY(-4px);
+    }
+    .px-card.selected {
+        transform: translateY(-10px);
+        box-shadow: 0 0 0 3px var(--pixel-gold), 0 8px 20px rgba(0,0,0,0.4);
+    }
+
+    /* ═══ 牌背样式 ═══ */
+    .px-card-back {
+        background-image: url('/images/card_back.jpg');
+        background-size: cover;
+        background-position: center;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        flex-shrink: 0;
+    }
+}
+
+@layer utilities {
+    .animate-card-flip {
+        animation: cardFlip 0.6s ease-in-out;
+    }
+
+    .animate-card-fly {
+        animation: cardFly 0.35s ease-out forwards;
+    }
+
+    .animate-pulse-glow {
+        animation: pulseGlow 2s ease-in-out infinite;
+    }
+
+    .animate-float {
+        animation: float 3s ease-in-out infinite;
+    }
+
+    .animate-card-fly-in {
+        animation: cardFlyIn 0.4s ease-out forwards;
+    }
+
+    .animate-flip7-glow {
+        animation: flip7Glow 1s ease-in-out infinite;
+    }
+
+    .animate-bust-shake {
+        animation: bustShake 0.3s ease-in-out 3;
+    }
+
+    .safe-bottom {
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    .safe-top {
+        padding-top: env(safe-area-inset-top, 0px);
+    }
+}
+
+/* ═══ 关键帧（原有动画）═══ */
+
+@keyframes cardFlip {
+    0% { transform: rotateY(0deg); }
+    100% { transform: rotateY(180deg); }
+}
+
+@keyframes cardFly {
+    0% { transform: translateY(0) scale(1); opacity: 1; }
+    100% { transform: translateY(-100px) scale(0.5); opacity: 0; }
+}
+
+@keyframes pulseGlow {
+    0%, 100% { box-shadow: 0 0 5px rgba(45, 212, 191, 0.5); }
+    50% { box-shadow: 0 0 20px rgba(45, 212, 191, 0.8); }
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+}
+
+@keyframes cardFlyIn {
+    0% { transform: translate(-50px, -100px) rotate(-20deg) scale(0.5); opacity: 0; }
+    100% { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
+}
+
+@keyframes flip7Glow {
+    0%, 100% { box-shadow: 0 0 10px rgba(255, 215, 0, 0.5); }
+    50% { box-shadow: 0 0 30px rgba(255, 215, 0, 1), 0 0 60px rgba(255, 215, 0, 0.5); }
+}
+
+@keyframes bustShake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px) rotate(-2deg); }
+    75% { transform: translateX(5px) rotate(2deg); }
+}
+
+/* ═══ 像素风新动画 ═══ */
+
+@keyframes pixelPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(64,160,80,0.4); }
+    50%      { box-shadow: 0 0 0 8px rgba(64,160,80,0); }
+}
+
+@keyframes pixelFloat {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-6px); }
+}
+
+@keyframes pixelShake {
+    0%, 100% { transform: translateX(0); }
+    20%      { transform: translateX(-4px); }
+    40%      { transform: translateX(4px); }
+    60%      { transform: translateX(-3px); }
+    80%      { transform: translateX(3px); }
+}
+
+@keyframes bustFlash {
+    0%, 100% { background: transparent; }
+    10%, 30%, 50% { background: rgba(192,64,64,0.15); }
+    20%, 40%, 60% { background: transparent; }
+}
+
+@keyframes scoreGainFloat {
+    0% { opacity: 0; transform: translateY(12px) scale(0.8); }
+    30% { opacity: 1; transform: translateY(0) scale(1.2); }
+    100% { opacity: 0; transform: translateY(-28px) scale(1); }
+}
+
+@keyframes bounceIn {
+    0% { opacity: 0; transform: scale(0.3); }
+    50% { opacity: 1; transform: scale(1.05); }
+    70% { transform: scale(0.95); }
+    100% { transform: scale(1); }
+}
+
+@keyframes deckHover {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+}
