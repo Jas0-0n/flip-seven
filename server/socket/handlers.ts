@@ -56,26 +56,96 @@ function broadcast(roomCode: string, event: GameEvent, excludePlayerId?: number)
   });
 }
 
+// 直接广播带 payload 的 ServerMessage（区别于 broadcast 的 game_event 包装）
+function broadcastMessage(roomCode: string, msg: ServerMessage, excludePlayerId?: number) {
+  const meta = rooms.get(roomCode);
+  if (!meta) return;
+  const raw = JSON.stringify(msg);
+  meta.connections.forEach((ws, pid) => {
+    if (pid !== excludePlayerId && ws.readyState === ws.OPEN) {
+      ws.send(raw);
+    }
+  });
+}
+
 function stateSync(roomCode: string, targetPlayerId?: number) {
   const meta = rooms.get(roomCode);
   if (!meta) return;
   const state = meta.room.getState();
   if (targetPlayerId !== undefined) {
     const ws = meta.connections.get(targetPlayerId);
-    if (ws) send(ws, { type: "state_sync", state });
+    if (ws) send(ws, { type: "state_sync", payload: state });
   } else {
     // 广播给所有连接
-    const payload: ServerMessage = { type: "state_sync", state };
+    const msg: ServerMessage = { type: "state_sync", payload: state };
     meta.connections.forEach((ws) => {
-      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(payload));
+      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
     });
   }
 }
 
-// ── 重连 TOKEN 相关 ──
+const FLIP3_ANIMATION_INTERVAL_MS = 1800;
+const flip3AutoTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function clearFlip3AutoTimer(roomCode: string) {
+  const timer = flip3AutoTimers.get(roomCode);
+  if (timer) clearTimeout(timer);
+  flip3AutoTimers.delete(roomCode);
+}
+
+function broadcastFlip3Step(roomCode: string, result: any) {
+  if (result.type === "flip_result") {
+    broadcastMessage(roomCode, {
+      type: "flip3_flip_result",
+      payload: result.payload,
+    });
+  } else if (result.type === "done") {
+    broadcastMessage(roomCode, {
+      type: "flipthree_done",
+      payload: result.payload,
+    });
+  }
+}
+
+function scheduleFlip3Step(roomCode: string, actorId: number) {
+  clearFlip3AutoTimer(roomCode);
+  flip3AutoTimers.set(roomCode, setTimeout(() => {
+    flip3AutoTimers.delete(roomCode);
+    const meta = rooms.get(roomCode);
+    if (!meta || meta.room.phase !== "playing") return;
+
+    const room = meta.room as any;
+    const nextResult = room.advanceFlip3(actorId);
+    if (!nextResult || nextResult.length === 0) {
+      // 暂存区需要人工选目标时，服务端状态机会在这里暂停；选择完成后重新启动。
+      stateSync(roomCode);
+      return;
+    }
+
+    for (const result of nextResult) {
+      broadcastFlip3Step(roomCode, result);
+      stateSync(roomCode);
+    }
+
+    // 只要还处于 flip3 相关状态，就继续下一步；否则结束。
+    if (room.flip3State || room.flip3Finalizing || room.flip3StashContext) {
+      scheduleFlip3Step(roomCode, actorId);
+    }
+  }, FLIP3_ANIMATION_INTERVAL_MS));
+}
+
+
 
 function generateReconnectToken(): string {
   return `rc_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function generateRoomCode(): string {
+  let code: string;
+  do {
+    code = Math.floor(1000 + Math.random() * 9000).toString();
+  } while (rooms.has(code));
+  return code;
 }
 
 function scheduleDisconnect(
@@ -152,16 +222,19 @@ function handleReconnect(
     return { success: false, message: "重连 token 无效或已过期" };
   }
 
-  // 清除定时器
+  const player = meta.room.getPlayer(playerId);
+  if (!player) return { success: false, message: "玩家不存在（已离开）" };
+  if (player.skipped) {
+    return { success: false, message: "该玩家已被跳过，不能恢复本局" };
+  }
+
+  // 清除定时器和一次性 token（仅在重连资格确认后消费）
   const timer = meta.room.disconnectTimers.get(playerId);
   if (timer) {
     clearTimeout(timer);
     meta.room.disconnectTimers.delete(playerId);
   }
   meta.playerTokens.delete(playerId);
-
-  const player = meta.room.getPlayer(playerId);
-  if (!player) return { success: false, message: "玩家不存在（已离开）" };
 
   // 更新连接：用新 ws 替换旧 ws
   meta.connections.set(playerId, newWs);
@@ -175,7 +248,7 @@ function handleReconnect(
   // 发送完整状态同步
   send(newWs, {
     type: "state_sync",
-    state: meta.room.getState(),
+    payload: meta.room.getState(),
   });
 
   // 通知其他玩家该玩家已恢复
@@ -200,6 +273,67 @@ export function handleMessage(
 
   switch (msg.type) {
     // ── 连接与重连 ──
+
+    case "create_room": {
+      const { nickname, playerCount } = msg.payload;
+      if (!nickname) {
+        return send(ws, { type: "error", payload: { code: "MISSING_PARAMS", message: "缺少昵称" } });
+      }
+
+      const rc = generateRoomCode();
+      const count = playerCount ?? 2;
+      const room = new Room(rc, count);
+      const meta: RoomMeta = {
+        room: room as unknown as RoomType,
+        connections: new Map(),
+        playerTokens: new Map(),
+        hostId: 0,
+      };
+      rooms.set(rc, meta);
+
+      const player = room.addPlayer(nickname, true);
+      meta.hostId = player.id;
+      meta.connections.set(player.id, ws);
+      ws.meta = { playerId: player.id, roomCode: rc };
+
+      send(ws, {
+        type: "player_joined",
+        payload: { playerId: player.id, roomCode: rc, reconnectToken: "" },
+      });
+      console.log(`[create_room] ${nickname} 创建房间 ${rc} (${count}人)`);
+      stateSync(rc);
+      break;
+    }
+
+    case "join_room": {
+      const { roomCode: rc, nickname } = msg.payload;
+      if (!rc || !nickname) {
+        return send(ws, { type: "error", payload: { code: "MISSING_PARAMS", message: "缺少必要参数" } });
+      }
+
+      const meta = rooms.get(rc);
+      if (!meta) {
+        return send(ws, { type: "error", payload: { code: "ROOM_NOT_FOUND", message: "房间不存在" } });
+      }
+
+      if (meta.room.players.size >= meta.room.playerCount) {
+        return send(ws, { type: "error", payload: { code: "ROOM_FULL", message: "房间已满" } });
+      }
+
+      if (meta.room.phase === "playing") {
+        return send(ws, { type: "error", payload: { code: "GAME_IN_PROGRESS", message: "游戏进行中" } });
+      }
+
+      const player = meta.room.addPlayer(nickname, false);
+      meta.connections.set(player.id, ws);
+      ws.meta = { playerId: player.id, roomCode: rc };
+
+      send(ws, { type: "player_joined", payload: { playerId: player.id, reconnectToken: "" } });
+      broadcast(rc, { type: "player_joined", playerId: player.id }, player.id);
+      stateSync(rc);
+      console.log(`[join_room] ${nickname} 加入房间 ${rc}`);
+      break;
+    }
 
     case "connect": {
       const { roomCode: rc, nickname, preferredColor } = msg.payload;
@@ -242,7 +376,8 @@ export function handleMessage(
     }
 
     case "disconnect_player": {
-      const { roomCode: rc, playerId } = msg.payload;
+      const rc = ws.meta?.roomCode;
+      const playerId = ws.meta?.playerId;
       if (!rc || playerId === undefined) return;
       const meta = rooms.get(rc);
       if (!meta) return;
@@ -295,6 +430,23 @@ export function handleMessage(
       break;
     }
 
+    // 前端发送的 { type: "ready" }——始终设为已准备
+    case "ready": {
+      if (!roomCode) return;
+      const meta = rooms.get(roomCode);
+      if (!meta) return;
+      const playerId = ws.meta?.playerId;
+      if (playerId === undefined) return;
+
+      const player = meta.room.getPlayer(playerId);
+      if (!player) return;
+
+      player.isReady = true;
+      broadcast(roomCode, { type: "ready_changed", playerId, ready: true });
+      stateSync(roomCode);
+      break;
+    }
+
     // ── 游戏动作 ──
 
     case "start_game": {
@@ -309,6 +461,8 @@ export function handleMessage(
 
       if (!meta.room.getAllReady()) return;
       meta.room.initGame();
+      // game_start: 带 payload 的消息，前端用此初始化游戏状态
+      broadcastMessage(roomCode, { type: "game_start", payload: meta.room.getState() });
       broadcast(roomCode, { type: "game_started" });
       stateSync(roomCode);
       break;
@@ -339,6 +493,7 @@ export function handleMessage(
         return send(ws, { type: "error", payload: { code: "PENDING_ACTION", message: "请先完成当前决策" } });
       }
 
+      const oldRound = meta.room.roundNumber;
       const result = meta.room.flip(playerId);
       // 使用 type asssertion to access lastFlip
       const lastFlip = (meta.room as unknown as { lastFlip: unknown }).lastFlip;
@@ -354,6 +509,11 @@ export function handleMessage(
 
       if (result.result === "flip7") {
         broadcast(roomCode, { type: "flip7_triggered", playerId });
+      }
+
+      // 检测轮次变化（全员出局/Flip7/牌堆强制结算）
+      if (meta.room.roundNumber !== oldRound) {
+        broadcast(roomCode, { type: "round_ended" });
       }
 
       stateSync(roomCode);
@@ -382,8 +542,13 @@ export function handleMessage(
         return send(ws, { type: "error", payload: { code: "PENDING_ACTION", message: "请先完成当前决策" } });
       }
 
+      const oldRound = meta.room.roundNumber;
       const result = meta.room.stop();
       broadcast(roomCode, { type: "player_stopped", playerId, score: result.score });
+      // 检测轮次变化（全员出局）
+      if (meta.room.roundNumber !== oldRound) {
+        broadcast(roomCode, { type: "round_ended" });
+      }
       stateSync(roomCode);
       break;
     }
@@ -427,14 +592,33 @@ export function handleMessage(
       if (playerId === undefined) return;
 
       if (meta.room.phase !== "playing") return;
+      if (meta.room.currentPlayerId !== playerId || meta.room.pendingAction?.actorId !== playerId) {
+        return send(ws, { type: "error", payload: { code: "NOT_YOUR_ACTION", message: "不能操作其他玩家的行动" } });
+      }
+      if (meta.room.pendingAction.type !== "freeze") {
+        return send(ws, { type: "error", payload: { code: "WRONG_ACTION", message: "当前不是冻结行动" } });
+      }
 
       const targetId = msg.payload?.targetId;
       if (targetId === undefined) return;
 
-      const result = meta.room.selectTarget(targetId);
+      const wasFlip3StashAction = Boolean((meta.room as any).flip3StashContext);
+      const result = meta.room.selectTarget(targetId, playerId);
       if (!result.success) return;
 
-      broadcast(roomCode, { type: "player_frozen", targetId, byPlayer: playerId });
+      if ((meta.room as any).flip3DonePendingBroadcast) {
+        (meta.room as any).flip3DonePendingBroadcast = false;
+        broadcastMessage(roomCode, {
+          type: "flipthree_done",
+          payload: {
+            targetId: (meta.room as any).flip3ExecutionResult?.targetId ?? playerId,
+            byPlayer: (meta.room as any).flip3ActorId ?? playerId,
+            executionResult: (meta.room as any).flip3ExecutionResult,
+          },
+        });
+      } else if (!wasFlip3StashAction) {
+        broadcast(roomCode, { type: "player_frozen", targetId, byPlayer: playerId });
+      }
       stateSync(roomCode);
       break;
     }
@@ -447,16 +631,91 @@ export function handleMessage(
       if (playerId === undefined) return;
 
       if (meta.room.phase !== "playing") return;
+      if (meta.room.currentPlayerId !== playerId || meta.room.pendingAction?.actorId !== playerId) {
+        return send(ws, { type: "error", payload: { code: "NOT_YOUR_ACTION", message: "不能操作其他玩家的行动" } });
+      }
+      if (meta.room.pendingAction.type !== "flipthree") {
+        return send(ws, { type: "error", payload: { code: "WRONG_ACTION", message: "当前不是翻三张行动" } });
+      }
 
       const targetId = msg.payload?.targetId;
       if (targetId === undefined) return;
 
-      const result = meta.room.selectTarget(targetId);
+      const wasFlip3StashAction = Boolean((meta.room as any).flip3StashContext);
+      const result = (meta.room as any).selectTarget(targetId, playerId);
       if (!result.success) return;
 
-      broadcast(roomCode, { type: "flipthree_done", targetId, byPlayer: playerId });
+      if (wasFlip3StashAction) {
+        if ((meta.room as any).flip3DonePendingBroadcast) {
+          (meta.room as any).flip3DonePendingBroadcast = false;
+          broadcastMessage(roomCode, {
+            type: "flipthree_done",
+            payload: {
+              targetId: (meta.room as any).flip3ExecutionResult?.targetId ?? playerId,
+              byPlayer: (meta.room as any).flip3ActorId ?? playerId,
+              executionResult: (meta.room as any).flip3ExecutionResult,
+            },
+          });
+        }
+        if ((meta.room as any).flip3State || (meta.room as any).flip3Finalizing) {
+          scheduleFlip3Step(roomCode, (meta.room as any).flip3State?.targetId ?? playerId);
+        }
+        stateSync(roomCode);
+        break;
+      }
+
+      // 即使第 1 张就爆牌/触发七连翻，也先广播翻牌结果，让所有客户端完成同一套动画。
+      if (result.flip3Ended) {
+        broadcastMessage(roomCode, {
+          type: "flip3_flip_result",
+          payload: {
+            targetId,
+            byPlayer: (meta.room as any).flip3ActorId ?? playerId,
+            flipNumber: 1,
+            card: result.flipResult.card,
+            result: result.flipResult.result,
+            busted: result.flipResult.busted,
+            flip7Triggered: result.flipResult.flip7Triggered
+          }
+        });
+        broadcastMessage(roomCode, {
+          type: "flipthree_done",
+          payload: {
+            targetId,
+            byPlayer: (meta.room as any).flip3ActorId ?? playerId,
+            executionResult: (meta.room as any).flip3ExecutionResult
+          }
+        });
+      } else {
+        // 第1张结果广播后，由服务端定时推进第2、3张；客户端只负责展示动画。
+        broadcastMessage(roomCode, {
+          type: "flip3_flip_result",
+          payload: {
+            targetId,
+            byPlayer: playerId,
+            flipNumber: 1,
+            card: result.flipResult.card,
+            result: result.flipResult.result,
+            busted: result.flipResult.busted,
+            flip7Triggered: result.flipResult.flip7Triggered
+          }
+        });
+        scheduleFlip3Step(roomCode, targetId);
+      }
       stateSync(roomCode);
       break;
+    }
+
+    case "flip3_next": {
+      if (!roomCode) return;
+      const meta = rooms.get(roomCode);
+      if (!meta) return;
+      const playerId = ws.meta?.playerId;
+      if (playerId === undefined) return;
+
+      if (meta.room.phase !== "playing") return;
+      // 兼容旧客户端：不再允许客户端手动推进 flip3。
+      return send(ws, { type: "error", payload: { code: "DEPRECATED_ACTION", message: "flip3_next 已由服务端自动推进" } });
     }
 
     case "action_revive": {
@@ -467,14 +726,40 @@ export function handleMessage(
       if (playerId === undefined) return;
 
       if (meta.room.phase !== "playing") return;
+      if (meta.room.currentPlayerId !== playerId || meta.room.pendingAction?.actorId !== playerId) {
+        return send(ws, { type: "error", payload: { code: "NOT_YOUR_ACTION", message: "不能操作其他玩家的行动" } });
+      }
+      if (meta.room.pendingAction.type !== "revive") {
+        return send(ws, { type: "error", payload: { code: "WRONG_ACTION", message: "当前不是复活行动" } });
+      }
 
       const targetId = msg.payload?.targetId;
       if (targetId === undefined) return;
 
-      const result = meta.room.selectTarget(targetId);
+      const wasFlip3StashAction = Boolean((meta.room as any).flip3StashContext);
+      const result = meta.room.selectTarget(targetId, playerId);
       if (!result.success) return;
 
-      broadcast(roomCode, { type: "revive_done", targetId, byPlayer: playerId });
+      if (wasFlip3StashAction) {
+        if ((meta.room as any).flip3DonePendingBroadcast) {
+          (meta.room as any).flip3DonePendingBroadcast = false;
+          broadcastMessage(roomCode, {
+            type: "flipthree_done",
+            payload: {
+              targetId: (meta.room as any).flip3ExecutionResult?.targetId ?? playerId,
+              byPlayer: (meta.room as any).flip3ActorId ?? playerId,
+              executionResult: (meta.room as any).flip3ExecutionResult,
+            },
+          });
+        }
+        if ((meta.room as any).flip3State || (meta.room as any).flip3Finalizing) {
+          scheduleFlip3Step(roomCode, (meta.room as any).flip3State?.targetId ?? playerId);
+        }
+        stateSync(roomCode);
+        break;
+      }
+
+      broadcast(roomCode, { type: "player_frozen", targetId, byPlayer: playerId });
       stateSync(roomCode);
       break;
     }
@@ -491,6 +776,7 @@ export function handleMessage(
 
       // 跳过：玩家主动跳过当前及后续所有轮次
       player.skipped = true;
+      player.endReason = "skipped";
       player.isOut = true;
 
       // 转移房主
@@ -524,6 +810,7 @@ export function handleMessage(
       for (const p of meta.room.players.values()) {
         if (p.skipped) {
           p.skipped = false;
+          p.endReason = null;
           p.isOut = false;
         }
       }
@@ -534,7 +821,11 @@ export function handleMessage(
 
     case "request_sync": {
       // 处理同步请求：如果携带 reconnect_token 则尝试重连
-      const { roomCode: rc, playerId, token } = msg.payload;
+      const { roomCode: requestedRoomCode, playerId, token } = msg.payload;
+      const rc = ws.meta?.roomCode ?? requestedRoomCode;
+      if (ws.meta?.roomCode && requestedRoomCode && requestedRoomCode !== ws.meta.roomCode) {
+        return send(ws, { type: "error", payload: { code: "ROOM_MISMATCH", message: "不能访问其他房间" } });
+      }
       if (rc && playerId !== undefined && token) {
         const meta = rooms.get(rc);
         if (meta) {

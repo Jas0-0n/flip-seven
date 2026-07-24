@@ -18,5 +18,8 @@ export type {
   AnimationType,
   HistoryEntry,
   PendingAction,
+  Flip3FlipRecord,
+  StashExecRecord,
+  Flip3ExecutionResult,
 } from "./game-state";
 export type { ClientMessage, ServerMessage } from "./events";

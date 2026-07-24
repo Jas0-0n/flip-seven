@@ -48,7 +48,11 @@ export interface GameState {
   deck: Card[]; // 未翻牌牌堆
   discard: Card[]; // 弃牌堆
   lastFlip: Card | null; // 最近一张翻开的牌
+  lastFlipPlayerId: number | null; // 新增：谁翻的这张牌
+  lastFlipResult: "continue" | "bust" | "flip7" | "pending_action" | null; // 新增：翻牌结果
   pendingAction: PendingAction | null; // 等待玩家决策（冻结/翻三张目标选择）
+  /** flip3 正在执行时用于隔离普通翻牌状态同步 */
+  flip3Active?: boolean;
   history: HistoryEntry[];
   winnerId: number | null;
   createdAt: number;
@@ -60,4 +64,33 @@ export interface PendingAction {
   type: "freeze" | "flipthree" | "revive";
   actorId: number; // 触发者
   targetId: number | null; // 目标（待选择）
+}
+
+/** 翻三张序列中单次翻牌记录 */
+export interface Flip3FlipRecord {
+  card: Card;
+  action: "entered_hand" | "stashed" | "bust_saved" | "bust";
+  busted: boolean;
+  triggerFlip7: boolean;
+}
+
+/** 暂存区单张牌的执行记录 */
+export interface StashExecRecord {
+  card: Card;
+  action: "scored" | "freeze" | "revive" | "revive_transferred" | "revive_discarded" | "flip3_nested" | "flip3_discarded" | "freeze_discarded";
+  nestedResult?: Flip3ExecutionResult;
+  freezeTargetId?: number;
+  reviveTargetId?: number;
+}
+
+/** 翻三张序列的完整执行结果 */
+export interface Flip3ExecutionResult {
+  targetId: number;
+  layer: number;
+  flips: Flip3FlipRecord[];
+  stash: Card[];
+  stashExecuted: StashExecRecord[];
+  busted: boolean;
+  flip7Triggered: boolean;
+  flipsDone: number;
 }

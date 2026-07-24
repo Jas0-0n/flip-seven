@@ -80,6 +80,11 @@ export function createSocketServer() {
     });
   });
 
-  console.log(`✅ WebSocket 服务器已启动，端口 ${PORT}，maxPayload=${MAX_PAYLOAD_BYTES}B，rate=${RATE_LIMIT最大}/${RATE_LIMIT_WINDOW_MS}ms`);
+  console.log(`✅ WebSocket 服务器已启动，端口 ${PORT}，maxPayload=${MAX_PAYLOAD_BYTES}B，rate=${RATE_LIMIT_MAX}/${RATE_LIMIT_WINDOW_MS}ms`);
   return wss;
+}
+
+// 当直接运行时（非 import），自动启动服务器
+if (process.argv[1] && process.argv[1].includes("server.ts")) {
+  createSocketServer();
 }

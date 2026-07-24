@@ -44,8 +44,27 @@ export function useGameSocket() {
                     viewedGame.current = true;
                     break;
 
+                case "player_joined": {
+                    const { playerId } = msg.payload as { playerId: number; reconnectToken: string };
+                    setGameSelfId(playerId);
+                    break;
+                }
+
                 case "state_sync":
                     setState(msg.payload as any);
+                    // 游戏未开始时，state_sync 也携带房间信息，同步到 roomStore
+                    {
+                        const payload = msg.payload as any;
+                        if (payload && payload.phase !== "playing") {
+                            const selfId = useGameStore.getState().selfId;
+                            const players = payload.players || [];
+                            const roomCode = payload.roomCode;
+                            const hostId = players.find((p: any) => p.isHost)?.id ?? 0;
+                            updatePlayers(players);
+                            setPhase(payload.phase === "waiting" ? "waiting" : "all_joined");
+                            if (roomCode) setRoom(roomCode, selfId, hostId);
+                        }
+                    }
                     break;
 
                 case "host_changed":
@@ -84,6 +103,23 @@ export function useGameSocket() {
                         setError((msg.payload as any).message);
                     }
                     break;
+
+                case "flip3_flip_result": {
+                    // 给 GameBoard 的自定义事件
+                    // 通过 window.dispatchEvent 来传递 flip3 单张结果
+                    const payload = msg.payload as any;
+                    const event = new CustomEvent("flip3_flip_result", { detail: msg.payload });
+                    window.dispatchEvent(event);
+                    break;
+                }
+
+                case "flipthree_done": {
+                    // 给 GameBoard 的自定义事件，通知 flip3 结束
+                    const payload = msg.payload as any;
+                    const event = new CustomEvent("flipthree_done", { detail: msg.payload });
+                    window.dispatchEvent(event);
+                    break;
+                }
             }
         });
 

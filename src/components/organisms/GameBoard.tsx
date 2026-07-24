@@ -6,15 +6,23 @@ import { useGameSocket } from "@/hooks/useGameSocket";
 import { PlayerArea } from "./PlayerArea";
 import { DeckPile } from "../atoms/DeckPile";
 import { DiscardPile } from "../atoms/DiscardPile";
-import { FlipCard } from "../atoms/FlipCard";
+import { FlipCard, type FlipPhase } from "../atoms/FlipCard";
 import { RoundHistory } from "../molecules/RoundHistory";
 import { RoundSummary } from "../molecules/RoundSummary";
-import { calculateRoundScore, isFlipSeven } from "@/utils/calculateScore";
+import { calculateRoundScore } from "@/utils/calculateScore";
 import { getCardImage } from "@/utils";
 import type { Card } from "@/types";
-
-/** 翻牌动画阶段 */
-type FlipPhase = "idle" | "showing_back" | "flipping" | "enlarged" | "entering_hand" | "busted" | "flip7";
+import {
+  formatCardForFlip,
+  formatHand,
+  formatHandForBust,
+  formatHandForFlip7,
+  formatFlippedCardsForRound,
+  printStashExecution,
+  printFlip3Flips,
+} from "@/utils/gameLogger";
+import type { GameState } from "@/types";
+import { socketClient } from "@/services/socket";
 
 /** 头像颜色循环 */
 const AVATAR_COLORS: Array<"blue" | "red" | "purple" | "green"> = ["blue", "red", "purple", "green"];
@@ -45,17 +53,76 @@ export function GameBoard() {
     const [preBustHand, setPreBustHand] = useState<Card[]>([]);
     const [flip7Score, setFlip7Score] = useState(0);
     const [otherPlayerFlip, setOtherPlayerFlip] = useState<{ playerId: number; card: Card } | null>(null);
+    const [flipOwnerId, setFlipOwnerId] = useState<number | null>(null);
+    const [startRect, setStartRect] = useState<DOMRect | null>(null);
+    const [endRect, setEndRect] = useState<DOMRect | null>(null);
+    const [hiddenCardId, setHiddenCardId] = useState<string | null>(null);
+    const [hiddenCardIds, setHiddenCardIds] = useState<string[]>([]);
+    const [animatingCardId, setAnimatingCardId] = useState<string | null>(null);
+    const deckRef = useRef<HTMLDivElement | null>(null);
     const flipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const flip3TimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+    const otherPlayerFlipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const roundDisplayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const scoreToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const roundCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const animationRunRef = useRef(0);
+    const flipOwnerRef = useRef<number | null>(null);
     const flipPhaseRef = useRef<FlipPhase>("idle");
     flipPhaseRef.current = flipPhase;
     const lastHistoryLenRef = useRef(0);
     const waitingForFlipRef = useRef(false);
     const lastFlipRef = useRef<Card | null>(null);
+    const flippedCardRef = useRef<Card | null>(null);
+    // 保存最新的 state，供事件处理函数读取（避免闭包捕获旧 state）
+    const stateRef = useRef(state);
+    stateRef.current = state;
+    
+    // ── 用户视角行为日志相关 ──
+    const prevStateRef = useRef<GameState | null>(null);
+    const prevHistoryLenRef = useRef(0);
+    const bustPendingRef = useRef(false);
+    const flip3ActiveRef = useRef(false);
+    const flip3RoundRef = useRef(0);
+    const processedFlip3KeyRef = useRef<string | null>(null);
+    const processedFlip3DoneKeyRef = useRef<string | null>(null);
+    const flip3RunRef = useRef(0);
+    
+    // ── flip3 逐张翻状态 ──
+    const [flip3State, setFlip3State] = useState<{
+        isActive: boolean;
+        targetId: number | null;
+        byPlayer: number | null;
+        flipNumber: number;
+        lastCard: Card | null;
+        isDone: boolean;
+    }>({
+        isActive: false,
+        targetId: null,
+        byPlayer: null,
+        flipNumber: 0,
+        lastCard: null,
+        isDone: false
+    });
 
     // ── 回合提示状态 ──
     type RoundDisplay = { type: "start"; round: number; playerName: string } | { type: "end"; round: number } | null;
     const [roundDisplay, setRoundDisplay] = useState<RoundDisplay>(null);
     const lastRoundRef = useRef(0);
+
+    // ── 组件卸载时统一停止所有动画与提示定时器 ──
+    useEffect(() => {
+        return () => {
+            if (flipTimerRef.current) clearTimeout(flipTimerRef.current);
+            flip3TimersRef.current.forEach((timer) => clearTimeout(timer));
+            flip3TimersRef.current = [];
+            if (otherPlayerFlipTimerRef.current) clearTimeout(otherPlayerFlipTimerRef.current);
+            if (roundDisplayTimerRef.current) clearTimeout(roundDisplayTimerRef.current);
+            if (scoreToastTimerRef.current) clearTimeout(scoreToastTimerRef.current);
+            if (roundCheckIntervalRef.current) clearInterval(roundCheckIntervalRef.current);
+            animationRunRef.current++;
+        };
+    }, []);
 
     // ── 计算当前手牌得分 ──
     const selfPlayer = state?.players.find((p) => p.id === selfId);
@@ -67,79 +134,389 @@ export function GameBoard() {
         const newEntries = state.history.slice(lastHistoryLenRef.current);
         if (newEntries.length > 0) {
             const latest = newEntries[newEntries.length - 1];
+            const latestPlayer = state.players.find((player) => player.id === latest.playerId);
+            const latestPlayerName = latestPlayer?.nickname ?? `玩家${latest.playerId}`;
             if (latest.scoreGained > 0) {
-                setScoreToastMsg(`${state.players[latest.playerId]?.nickname} +${latest.scoreGained} 分`);
+                setScoreToastMsg(`${latestPlayerName} +${latest.scoreGained} 分`);
                 setScoreToastPositive(true);
                 setShowScoreToast(true);
-                setTimeout(() => setShowScoreToast(false), 2500);
+                if (scoreToastTimerRef.current) clearTimeout(scoreToastTimerRef.current);
+                scoreToastTimerRef.current = setTimeout(() => {
+                    setShowScoreToast(false);
+                    scoreToastTimerRef.current = null;
+                }, 2500);
             } else if (latest.isBust) {
-                setScoreToastMsg(`${state.players[latest.playerId]?.nickname} 爆牌 +0 分`);
+                setScoreToastMsg(`${latestPlayerName} 爆牌 +0 分`);
                 setScoreToastPositive(false);
                 setShowScoreToast(true);
-                setTimeout(() => setShowScoreToast(false), 2500);
+                if (scoreToastTimerRef.current) clearTimeout(scoreToastTimerRef.current);
+                scoreToastTimerRef.current = setTimeout(() => {
+                    setShowScoreToast(false);
+                    scoreToastTimerRef.current = null;
+                }, 2500);
             }
             lastHistoryLenRef.current = state.history.length;
         }
     }, [state]);
 
-    // ── 捕获翻牌结果 ──
+    // ── 捕获翻牌结果（使用 lastFlipResult 决策动画） ──
     useEffect(() => {
-        if (waitingForFlipRef.current && state?.lastFlip) {
+        if (state && !state.flip3Active && waitingForFlipRef.current && state.lastFlip && lastFlipRef.current !== state.lastFlip) {
             setFlippedCard(state.lastFlip);
+            flippedCardRef.current = state.lastFlip;
             lastFlipRef.current = state.lastFlip;
+            // 普通抽牌才隐藏单张新牌；flip3 使用独立动画，不过滤真实手牌。
+            if (!flip3ActiveRef.current) {
+                setHiddenCardId(state.lastFlip.id);
+            }
         }
     }, [state?.lastFlip]);
 
-    // ── 当不是自己的回合时，重置动画状态 ──
+    // ── flip3 逐张翻事件处理 ──
     useEffect(() => {
-        if (!state || !selfId) return;
-        if (state.currentPlayerId !== selfId && flipPhase !== "idle") {
-            setFlipPhase("idle");
-            setFlippedCard(null);
-            setPreBustHand([]);
-            setFlip7Score(0);
-            waitingForFlipRef.current = false;
+        const handleFlip3FlipResult = (event: Event) => {
+            const detail = (event as CustomEvent).detail;
+            if (!detail?.targetId || !detail?.card) return;
+            const isTarget = detail.targetId === selfId;
+
+            // 事件去重：同一 (targetId, flipNumber) 只处理一次
+            const eventKey = `${detail.targetId}_${detail.flipNumber}`;
+            if (processedFlip3KeyRef.current === eventKey) return;
+            processedFlip3KeyRef.current = eventKey;
+
+            // 新一张牌到来时取消上一张的残留计时器，避免旧 reset timer 清空新流程。
+            flip3TimersRef.current.forEach((timer) => clearTimeout(timer));
+            flip3TimersRef.current = [];
             if (flipTimerRef.current) {
                 clearTimeout(flipTimerRef.current);
                 flipTimerRef.current = null;
             }
+            ++flip3RunRef.current;
+
+            // 用户视角日志
+            flip3ActiveRef.current = true;
+            const currentState = stateRef.current;
+            flip3RoundRef.current = currentState?.roundNumber ?? 0;
+            const actor = currentState?.players.find((p) => p.id === detail.byPlayer);
+            const target = currentState?.players.find((p) => p.id === detail.targetId);
+            const actorName = actor?.nickname ?? `玩家${detail.byPlayer}`;
+            const targetName = target?.nickname ?? `玩家${detail.targetId}`;
+            const round = flip3RoundRef.current;
+            const cardName = formatCardForFlip(detail.card);
+
+            // 如果是第1张，打印"对玩家B使用翻三张"
+            if (detail.flipNumber === 1) {
+                processedFlip3DoneKeyRef.current = null;
+                waitingForFlipRef.current = false;
+                console.log(`玩家${actorName}, Round${round}, 对${targetName}使用翻三张`);
+            }
+
+            // 打印翻开第N张
+            let suffix = "";
+            if (detail.card?.type !== "number") {
+                suffix = "（暂存）";
+            }
+            if (detail.result === "bust" || detail.busted) {
+                suffix = "，检测到爆牌，Trigger爆牌动画";
+            } else if (detail.result === "flip7" || detail.flip7Triggered) {
+                suffix = "，检测到七连翻，Trigger七连翻动画";
+            }
+            console.log(`玩家${targetName}, Round${round}, 翻开第${detail.flipNumber}张：${cardName}${suffix}`);
+
+            setFlip3State({
+                isActive: true,
+                targetId: detail.targetId,
+                byPlayer: detail.byPlayer,
+                flipNumber: detail.flipNumber,
+                lastCard: detail.card,
+                isDone: false
+            });
+
+            // 目标玩家负责推进服务端流程，但所有客户端都播放同一套视觉动画。
+            setHiddenCardIds((ids) => isTarget && !ids.includes(detail.card.id) ? [...ids, detail.card.id] : ids);
+            flipOwnerRef.current = detail.targetId;
+            setFlipOwnerId(detail.targetId);
+            if (flipTimerRef.current) clearTimeout(flipTimerRef.current);
+
+            const deckRect = deckRef.current?.getBoundingClientRect() ?? null;
+            const handEl = document.querySelector(`[data-player-hand-id="${detail.targetId}"]`);
+            setStartRect(deckRect);
+            setEndRect(handEl?.getBoundingClientRect() ?? null);
+            setFlippedCard(detail.card);
+            flippedCardRef.current = detail.card;
+            setFlipPhase("showing_back");
+
+            const run = ++flip3RunRef.current;
+            // flip3 动画节奏：150ms 牌背、550ms 放大、550ms 翻牌、450ms 入手。
+            flipTimerRef.current = setTimeout(() => {
+                if (flip3RunRef.current !== run) return;
+                setFlipPhase("enlarged");
+                flipTimerRef.current = setTimeout(() => {
+                    if (flip3RunRef.current !== run) return;
+                    setFlipPhase("flipping");
+                    flipTimerRef.current = setTimeout(() => {
+                        if (flip3RunRef.current !== run) return;
+                        setFlipPhase("entering_hand");
+                        flipTimerRef.current = setTimeout(() => {
+                            if (flip3RunRef.current !== run) return;
+                            setFlipPhase("idle");
+                            flipOwnerRef.current = null;
+                            setFlipOwnerId(null);
+                            setFlippedCard(null);
+                            flippedCardRef.current = null;
+                            if (isTarget) {
+                                setHiddenCardIds((ids) => ids.filter((id) => id !== detail.card.id));
+                                // 下一张由服务端推进；客户端只负责展示动画。
+                            }
+                        }, 450);
+                    }, 550);
+                }, 550);
+            }, 150);
+            flip3TimersRef.current.push(flipTimerRef.current);
+        };
+
+        const handleFlipThreeDone = (event: Event) => {
+            const detail = (event as CustomEvent).detail;
+            if (!detail?.targetId || !detail?.executionResult) return;
+            const execResult = detail.executionResult;
+            const doneKey = `${detail.targetId}_${execResult?.flipsDone ?? execResult?.flips?.length ?? 0}`;
+            if (processedFlip3DoneKeyRef.current === doneKey) return;
+            processedFlip3DoneKeyRef.current = doneKey;
+            const currentState = stateRef.current;
+            const actor = currentState?.players.find((p) => p.id === detail.byPlayer);
+            const target = currentState?.players.find((p) => p.id === detail.targetId);
+            const actorName = actor?.nickname ?? `玩家${detail.byPlayer}`;
+            const targetName = target?.nickname ?? `玩家${detail.targetId}`;
+            const round = flip3RoundRef.current;
+
+            // 打印翻三张完成信息
+            if (execResult && execResult.flips && execResult.flips.length >= 1) {
+                if (execResult.flips.length === 1 && (execResult.busted || execResult.flip7Triggered)) {
+                    // 第1张就爆牌/七连翻（无 flip3_flip_result 事件）
+                    console.log(`玩家${actorName}, Round${round}, 对${targetName}使用翻三张`);
+                    printFlip3Flips(execResult.flips, targetName, currentState?.players ?? []);
+                } else if (execResult.stashExecuted && execResult.stashExecuted.length > 0) {
+                    // 3张翻完，有暂存区
+                    console.log(`3张翻完，执行暂存区：`);
+                    printStashExecution(execResult.stashExecuted, currentState?.players ?? []);
+                } else {
+                    // 3张翻完，无暂存区
+                    // 最后一张牌已被 handleFlip3FlipResult 打印，这里不需要重复
+                }
+            }
+
+            setFlip3State(prev => ({
+                ...prev,
+                // 服务端已经完成本次翻三张流程，立即隐藏流程提示；动画继续独立播放。
+                isActive: false,
+                isDone: true
+            }));
+
+            // done 只结束服务端流程提示，不打断当前牌的视觉动画。
+            // 当前牌由自己的动画 run 负责归位和清理。
+            const resetTimer = setTimeout(() => {
+                flip3TimersRef.current = flip3TimersRef.current.filter((timer) => timer !== resetTimer);
+                setFlip3State({
+                    isActive: false,
+                    targetId: null,
+                    byPlayer: null,
+                    flipNumber: 0,
+                    lastCard: null,
+                    isDone: false
+                });
+            }, 2600);
+            flip3TimersRef.current.push(resetTimer);
+        };
+
+        window.addEventListener("flip3_flip_result", handleFlip3FlipResult);
+        window.addEventListener("flipthree_done", handleFlipThreeDone);
+
+        return () => {
+            window.removeEventListener("flip3_flip_result", handleFlip3FlipResult);
+            window.removeEventListener("flipthree_done", handleFlipThreeDone);
+        };
+    }, [selfId]);
+
+    // ── 用户视角行为日志：检测 state 变化 ──
+    useEffect(() => {
+        if (!state) return;
+        const prev = prevStateRef.current;
+
+        if (!prev) {
+            // 首次 state - 打印回合开始
+            if (state.phase === "playing") {
+                const startPlayer = state.players.find((p) => p.id === state.currentPlayerId);
+                if (startPlayer) {
+                    console.log(`第${state.roundNumber}回合开始，由${startPlayer.nickname}先手`);
+                }
+            }
+            prevStateRef.current = state;
+            prevHistoryLenRef.current = state.history.length;
+            return;
         }
-    }, [state?.currentPlayerId, selfId, flipPhase]);
+
+        // ── 检测游戏结束 ──
+        if (state.phase === "ended" && state.winnerId !== null && prev.phase !== "ended") {
+            const winner = state.players.find((p) => p.id === state.winnerId);
+            if (winner) {
+                console.log(`玩家${winner.nickname}达到${winner.score}分，游戏结束！获胜者：${winner.nickname}`);
+            }
+            prevStateRef.current = state;
+            prevHistoryLenRef.current = state.history.length;
+            return;
+        }
+
+        // ── 检测轮次变化 ──
+        if (prev.roundNumber !== state.roundNumber) {
+            // 打印上一轮结算
+            const prevRound = prev.roundNumber;
+            console.log(`\n第${prevRound}回合结束，结算结果:`);
+            // 从 history 获取上一轮所有记录
+            const prevRoundEntries = state.history.filter((h) => h.round === prevRound);
+            for (const entry of prevRoundEntries) {
+                const player = state.players.find((p) => p.id === entry.playerId);
+                if (player) {
+                    const cardsStr = formatFlippedCardsForRound(entry);
+                    console.log(`  ${player.nickname}: [${cardsStr}]`);
+                }
+            }
+            // 打印新回合开始
+            const startPlayer = state.players.find((p) => p.id === state.currentPlayerId);
+            if (startPlayer && state.phase === "playing") {
+                console.log(`\n第${state.roundNumber}回合开始，由${startPlayer.nickname}先手`);
+            }
+            prevStateRef.current = state;
+            prevHistoryLenRef.current = state.history.length;
+            return;
+        }
+
+        const lastFlipChanged = state.lastFlip !== prev.lastFlip && state.lastFlip;
+        const currentPlayerIdChanged = prev.currentPlayerId !== state.currentPlayerId;
+        const isFlip3StateSync = Boolean(state.flip3Active || prev.flip3Active);
+
+        // ── 检测 lastFlip 变化（非 flip3 翻牌）──
+        if (lastFlipChanged && !flip3ActiveRef.current && !isFlip3StateSync) {
+            const flipper = state.players.find((p) => p.id === state.lastFlipPlayerId);
+            if (flipper && state.lastFlip) {
+                const round = state.roundNumber;
+                const cardName = formatCardForFlip(state.lastFlip);
+
+                if (state.lastFlipResult === "pending_action") {
+                    // 翻到功能牌，需选目标；冻结统一使用明确的提示，避免重复通用日志
+                    const actionType = state.pendingAction?.type;
+                    if (actionType === "freeze") {
+                        console.log(`玩家${flipper.nickname}, Round${round}, 翻到${cardName}, 请选择冻结目标`);
+                    } else {
+                        const targetMsg = actionType === "revive" ? "请选择转赠目标" : "请选择目标";
+                        console.log(`玩家${flipper.nickname}, Round${round}, 翻到${cardName}, ${targetMsg}`);
+                    }
+                } else if (state.lastFlipResult === "bust") {
+                    // 爆牌 - 打印完整一行（手牌 + 触发牌标注）
+                    // state 中手牌已被清空，从 prev 获取清空前的手牌
+                    const prevFlipper = prev.players.find((p) => p.id === state.lastFlipPlayerId);
+                    const oldHand = prevFlipper?.hand ?? [];
+                    const handStr = formatHandForBust(oldHand, state.lastFlip);
+                    console.log(`玩家${flipper.nickname}, Round${round}, 翻到${cardName}, 检测到爆牌，Trigger爆牌动画, ${flipper.nickname}回合结束，当前手牌[${handStr}]`);
+                    bustPendingRef.current = true;
+                }
+                // continue 和 flip7 在 currentPlayerId 变化时处理
+            }
+        }
+
+        // ── 检测 currentPlayerId 变化 ──
+        if (currentPlayerIdChanged) {
+            const oldPlayer = prev.players.find((p) => p.id === prev.currentPlayerId);
+            const round = state.roundNumber;
+
+            if (bustPendingRef.current) {
+                // 爆牌确认后的切换 - 已打印过，跳过
+                bustPendingRef.current = false;
+            } else if (flip3ActiveRef.current) {
+                // flip3 导致的切换 - 用 oldPlayer.hand（prev 状态，未被清空）
+                if (oldPlayer) {
+                    // 使用最新 state，避免暂存区结算前的旧手牌覆盖最终结果。
+                    const latestPlayer = state.players.find((p) => p.id === oldPlayer.id);
+                    const handStr = formatHand(latestPlayer?.hand ?? []);
+                    console.log(`玩家${oldPlayer.nickname}, Round${round}, ${oldPlayer.nickname}回合结束，当前手牌[${handStr}]`);
+                }
+                flip3ActiveRef.current = false;
+            } else if (lastFlipChanged && oldPlayer && state.lastFlip) {
+                // continue 或 flip7 导致的切换
+                const cardName = formatCardForFlip(state.lastFlip);
+
+                if (state.lastFlipResult === "flip7") {
+                    // 七连翻 - state 中手牌已被清空，从 prev 获取清空前的手牌
+                    const handStr = formatHandForFlip7(oldPlayer.hand, state.lastFlip);
+                    console.log(`玩家${oldPlayer.nickname}, Round${round}, 翻到${cardName}, 检测到七连翻，Trigger七连翻动画, ${oldPlayer.nickname}回合结束，当前手牌[${handStr}]`);
+                } else {
+                    // continue - 新手牌已包含翻到的牌
+                    const newHand = state.players.find((p) => p.id === oldPlayer.id)?.hand ?? [];
+                    const handStr = formatHand(newHand);
+                    console.log(`玩家${oldPlayer.nickname}, Round${round}, 翻到${cardName}, ${oldPlayer.nickname}回合结束，当前手牌[${handStr}]`);
+                }
+            } else if (oldPlayer) {
+                // lastFlip 没变 -> STOP
+                const newHistory = state.history.slice(prevHistoryLenRef.current);
+                const stopEntry = newHistory.find((h) => h.actions.includes("stop") && h.playerId === prev.currentPlayerId);
+                if (stopEntry) {
+                    // STOP - 用 prev 的手牌（清空前）
+                    const prevHand = oldPlayer.hand;
+                    const handStr = formatHand(prevHand);
+                    console.log(`玩家${oldPlayer.nickname}, Round${round}, 选择STOP, ${oldPlayer.nickname}回合结束，当前手牌[${handStr}]`);
+                }
+            }
+        }
+
+        prevStateRef.current = state;
+        prevHistoryLenRef.current = state.history.length;
+    }, [state]);
 
     // ── 当 round 或 phase 变化时，强制重置动画（防 state_sync 竞争） ──
     useEffect(() => {
         if (!state) return;
-        // 动画进行中但轮次或阶段变了 → 强制中断动画
-        if (flipPhase !== "idle" && state.phase !== "playing") {
+        // currentPlayerId 会在服务端翻牌后立即切换，不能因此中断当前牌的视觉动画。
+        // 只有游戏阶段离开 playing 时，才强制清理普通翻牌动画。
+        const shouldCancelAnimation =
+            flipPhase !== "idle" &&
+            state.phase !== "playing" &&
+            !flip3ActiveRef.current;
+
+        if (shouldCancelAnimation) {
             if (flipTimerRef.current) {
                 clearTimeout(flipTimerRef.current);
                 flipTimerRef.current = null;
             }
+            animationRunRef.current++;
+            flipOwnerRef.current = null;
+            setFlipOwnerId(null);
             setFlipPhase("idle");
             setFlippedCard(null);
+            flippedCardRef.current = null;
             setPreBustHand([]);
             setFlip7Score(0);
+            setHiddenCardId(null);
+            setHiddenCardIds([]);
+            setAnimatingCardId(null);
             waitingForFlipRef.current = false;
         }
-    }, [state?.roundNumber, state?.phase, flipPhase]);
+    }, [state?.roundNumber, state?.phase, state?.currentPlayerId, flipPhase]);
 
-    // ── 检测其他玩家翻牌 ──
+    // ── 检测其他玩家翻牌（使用 lastFlipPlayerId 判断来源） ──
     useEffect(() => {
-        if (!state || !state.lastFlip || !selfId) return;
+        if (!state?.lastFlip || !state.lastFlipPlayerId || !selfId) return;
+        if (state.lastFlipPlayerId === selfId) return; // 自己翻牌走本地动画
+        if (flipPhase !== "idle") return;
+        if (lastFlipRef.current === state.lastFlip) return;
 
-        const lastFlipPlayer = state.currentPlayerId !== selfId
-            ? state.currentPlayerId
-            : null;
+        setOtherPlayerFlip({ playerId: state.lastFlipPlayerId, card: state.lastFlip });
+        lastFlipRef.current = state.lastFlip;
 
-        if (lastFlipPlayer !== null && flipPhase === "idle" && lastFlipRef.current !== state.lastFlip) {
-            setOtherPlayerFlip({ playerId: lastFlipPlayer, card: state.lastFlip });
-            lastFlipRef.current = state.lastFlip;
-
-            setTimeout(() => {
-                setOtherPlayerFlip(null);
-            }, 1500);
-        }
-    }, [state?.lastFlip, state?.currentPlayerId, selfId, flipPhase]);
+        if (otherPlayerFlipTimerRef.current) clearTimeout(otherPlayerFlipTimerRef.current);
+        otherPlayerFlipTimerRef.current = setTimeout(() => {
+            setOtherPlayerFlip(null);
+            otherPlayerFlipTimerRef.current = null;
+        }, 1500);
+    }, [state?.lastFlip, state?.lastFlipPlayerId, selfId, flipPhase]);
 
     // ── 检测回合变化，显示回合提示 ──
     useEffect(() => {
@@ -158,22 +535,26 @@ export function GameBoard() {
                 round: currentRound,
                 playerName: startPlayer?.nickname ?? "???",
             });
-            setTimeout(() => setRoundDisplay(null), 2000);
             return;
         }
 
         if (currentRound > lastRoundRef.current) {
             // 如果动画进行中，等动画结束后再显示
             if (flipPhase !== "idle") {
+                if (roundCheckIntervalRef.current) clearInterval(roundCheckIntervalRef.current);
                 const checkInterval = setInterval(() => {
                     // 读取 ref 来避免 TypeScript 闭包收窄问题
                     if (flipPhaseRef.current === "idle") {
                         clearInterval(checkInterval);
+                        roundCheckIntervalRef.current = null;
                         setRoundDisplay({ type: "end", round: lastRoundRef.current });
                     }
                 }, 100);
-                setTimeout(() => {
+                roundCheckIntervalRef.current = checkInterval;
+                if (roundDisplayTimerRef.current) clearTimeout(roundDisplayTimerRef.current);
+                roundDisplayTimerRef.current = setTimeout(() => {
                     clearInterval(checkInterval);
+                    roundCheckIntervalRef.current = null;
                     setRoundDisplay({ type: "end", round: lastRoundRef.current });
                 }, 5000);
             } else {
@@ -188,6 +569,7 @@ export function GameBoard() {
     useEffect(() => {
         if (!state || roundDisplay?.type !== "end") return;
 
+        if (roundDisplayTimerRef.current) clearTimeout(roundDisplayTimerRef.current);
         const timer = setTimeout(() => {
             const startPlayer = state.players.find((p) => p.id === state.currentPlayerId);
             setRoundDisplay({
@@ -195,91 +577,173 @@ export function GameBoard() {
                 round: state.roundNumber,
                 playerName: startPlayer?.nickname ?? "???",
             });
-
-            setTimeout(() => {
-                setRoundDisplay(null);
-            }, 2000);
         }, 3000);
+        roundDisplayTimerRef.current = timer;
 
-        return () => clearTimeout(timer);
+        return () => {
+            clearTimeout(timer);
+            if (roundDisplayTimerRef.current === timer) roundDisplayTimerRef.current = null;
+        };
     }, [roundDisplay, state]);
+
+    // start 提示独立计时，避免被回合结束提示的 timer 清理或覆盖。
+    useEffect(() => {
+        if (roundDisplay?.type !== "start") return;
+
+        if (roundDisplayTimerRef.current) {
+            clearTimeout(roundDisplayTimerRef.current);
+        }
+
+        const timer = setTimeout(() => {
+            setRoundDisplay(null);
+            roundDisplayTimerRef.current = null;
+        }, 2000);
+
+        roundDisplayTimerRef.current = timer;
+        return () => {
+            clearTimeout(timer);
+            if (roundDisplayTimerRef.current === timer) {
+                roundDisplayTimerRef.current = null;
+            }
+        };
+    }, [roundDisplay]);
 
     // ── 翻牌操作：启动动画序列 ──
     const handleFlip = useCallback(() => {
         if (!isMyTurn() || state?.phase !== "playing") return;
         if (flipPhase !== "idle") return;
 
+        const animationRun = ++animationRunRef.current;
+        flipOwnerRef.current = selfId;
+        setFlipOwnerId(selfId);
         lastHistoryLenRef.current = state?.history.length ?? 0;
 
         const currentHand = state?.players.find((p) => p.id === selfId)?.hand ?? [];
         setPreBustHand([...currentHand]);
 
+        // 测量牌堆与手牌区位置
+        const deckRect = deckRef.current?.getBoundingClientRect() ?? null;
+        const handEl = document.querySelector(`[data-player-hand-id="${selfId}"]`);
+        const handRect = handEl?.getBoundingClientRect() ?? null;
+        setStartRect(deckRect);
+        setEndRect(handRect);
+
         waitingForFlipRef.current = true;
+        flippedCardRef.current = null;
+        setFlippedCard(null);
+        setAnimatingCardId(null);
+
         actionFlip();
 
         setFlipPhase("showing_back");
-        setFlippedCard(null);
 
+        // 普通翻牌与 flip3 使用统一节奏：150ms 牌背、550ms 放大、550ms 翻牌。
         flipTimerRef.current = setTimeout(() => {
-            setFlipPhase("flipping");
+            if (animationRunRef.current !== animationRun) return;
+            setFlipPhase("enlarged");
 
             flipTimerRef.current = setTimeout(() => {
-                setFlipPhase("enlarged");
+                if (animationRunRef.current !== animationRun) return;
+                const tryFlipping = () => {
+                    if (animationRunRef.current !== animationRun) return;
+                    if (flippedCardRef.current) {
+                        setFlipPhase("flipping");
 
-                flipTimerRef.current = setTimeout(() => {
-                    setFlipPhase("entering_hand");
-                }, 800);
-            }, 800);
-        }, 200);
-    }, [isMyTurn, state, actionFlip, confirmFlip, flipPhase, selfId]);
+                        flipTimerRef.current = setTimeout(() => {
+                            if (animationRunRef.current === animationRun) {
+                                setFlipPhase("entering_hand");
+                            }
+                        }, 550);
+                    } else {
+                        flipTimerRef.current = setTimeout(tryFlipping, 50);
+                    }
+                };
+                tryFlipping();
+            }, 550);
+        }, 150);
+    }, [isMyTurn, state, actionFlip, flipPhase, selfId]);
 
-    // ── 检测 state 变化，驱动动画后续阶段 ──
+    // ── 检测 state 变化，驱动动画后续阶段（使用 lastFlipResult 决策） ──
     useEffect(() => {
         if (!state || flipPhase !== "entering_hand" || !waitingForFlipRef.current) return;
 
-        const selfNow = state.players.find((p) => p.id === selfId);
-        if (!selfNow) return;
+        // 归位动画持续 0.3s，等待完成后再结算
+        flipTimerRef.current = setTimeout(() => {
+            const cardId = flippedCardRef.current?.id ?? null;
 
-        if (selfNow.hasBusted) {
-            setFlipPhase("busted");
-            flipTimerRef.current = setTimeout(() => {
+            if (state.lastFlipResult === "bust") {
+                setFlipPhase("busted");
+                setHiddenCardId(null);
+                setAnimatingCardId(null);
+                flipTimerRef.current = setTimeout(() => {
+                    setFlipPhase("idle");
+                    setFlippedCard(null);
+                    flippedCardRef.current = null;
+                    setPreBustHand([]);
+                    setHiddenCardId(null);
+                    setAnimatingCardId(null);
+                    waitingForFlipRef.current = false;
+                    confirmFlip(); // 爆牌需要确认，服务端推进
+                }, 1000);
+            } else if (state.lastFlipResult === "flip7") {
+                const selfNow = state.players.find((p) => p.id === selfId);
+                const score = selfNow ? calculateRoundScore(selfNow.hand, 15) : 0;
+                setFlip7Score(score);
+                setFlipPhase("flip7");
+                setHiddenCardId(null);
+                setAnimatingCardId(null);
+                flipTimerRef.current = setTimeout(() => {
+                    setFlipPhase("idle");
+                    setFlippedCard(null);
+                    flippedCardRef.current = null;
+                    setPreBustHand([]);
+                    setFlip7Score(0);
+                    setHiddenCardId(null);
+                    setAnimatingCardId(null);
+                    waitingForFlipRef.current = false;
+                    // 不发 confirmFlip，服务端已处理新回合
+                }, 2000);
+            } else {
+                // 普通 continue / score / double / revive
                 setFlipPhase("idle");
                 setFlippedCard(null);
+                flippedCardRef.current = null;
                 setPreBustHand([]);
+                setHiddenCardId(null);
+                setAnimatingCardId(cardId);
                 waitingForFlipRef.current = false;
-                confirmFlip();
-            }, 1000);
-        } else if (isFlipSeven(selfNow.hand)) {
-            const score = calculateRoundScore(selfNow.hand, 15);
-            setFlip7Score(score);
-            setFlipPhase("flip7");
-            flipTimerRef.current = setTimeout(() => {
-                setFlipPhase("idle");
-                setFlippedCard(null);
-                setPreBustHand([]);
-                setFlip7Score(0);
-                waitingForFlipRef.current = false;
-                confirmFlip();
-            }, 2000);
-        } else {
-            setFlipPhase("idle");
-            setFlippedCard(null);
-            setPreBustHand([]);
-            waitingForFlipRef.current = false;
-            confirmFlip();
-        }
+                // 短暂高亮后清除
+                flipTimerRef.current = setTimeout(() => {
+                    setAnimatingCardId(null);
+                }, 500);
+                // 不发 confirmFlip，服务端已切换玩家
+            }
+        }, 300);
     }, [state, flipPhase, selfId, confirmFlip]);
 
-    // ── 手动跳过动画 ──
+    // ── 手动跳过动画（只有爆牌需要确认） ──
     const handleSkipAnimation = useCallback(() => {
         if (flipTimerRef.current) clearTimeout(flipTimerRef.current);
-        if (flipPhase === "enlarged" || flipPhase === "busted" || flipPhase === "flip7") {
+        if (
+            flipPhase === "showing_back" ||
+            flipPhase === "enlarged" ||
+            flipPhase === "flipping" ||
+            flipPhase === "entering_hand" ||
+            flipPhase === "busted" ||
+            flipPhase === "flip7"
+        ) {
             setFlipPhase("idle");
             setFlippedCard(null);
+            flippedCardRef.current = null;
             setPreBustHand([]);
             setFlip7Score(0);
+            setHiddenCardId(null);
+            setAnimatingCardId(null);
             waitingForFlipRef.current = false;
-            confirmFlip();
+            // 只有爆牌需要 confirmFlip
+            if (flipPhase === "busted") {
+                confirmFlip();
+            }
         }
     }, [confirmFlip, flipPhase]);
 
@@ -293,11 +757,28 @@ export function GameBoard() {
     // ── 目标选择 ──
     const handleTargetSelect = useCallback(
         (targetId: number) => {
-            actionTarget(targetId);
+            const pa = state?.pendingAction;
+            const actor = pa ? state?.players.find((p) => p.id === pa.actorId) : null;
+            const target = state?.players.find((p) => p.id === targetId);
+
+            if (!pa) {
+                actionTarget(targetId);
+            } else if (pa.type === "freeze") {
+                if (actor && target) {
+                    console.log(`玩家${actor.nickname}对玩家${target.nickname}使用了冻结`);
+                }
+                socketClient.send({ type: "action_freeze", payload: { targetId } });
+            } else if (pa.type === "flipthree") {
+                socketClient.send({ type: "action_flipthree", payload: { targetId } });
+            } else if (pa.type === "revive") {
+                socketClient.send({ type: "action_revive", payload: { targetId } });
+            } else {
+                actionTarget(targetId);
+            }
             setFlipPhase("idle");
             setFlippedCard(null);
         },
-        [actionTarget]
+        [state, actionTarget]
     );
 
     if (!state) {
@@ -313,21 +794,26 @@ export function GameBoard() {
     }
 
     const pendingAction = state.pendingAction;
+    // flip3 选定目标后完全由内部状态机推进；只有仍处于
+    // pendingAction 的初始阶段才显示一次目标选择 UI。
     const needsTargetSelection = !!(
         pendingAction &&
         pendingAction.actorId === selfId &&
-        pendingAction.targetId === null
+        pendingAction.targetId === null &&
+        !flip3ActiveRef.current
     );
 
     const targetablePlayers = state.players.filter(
-        (p) => {
-            if (p.id === selfId || p.isOut || p.skipped) return false;
-            // 复活牌目标：排除已有复活牌的玩家
-            if (pendingAction && pendingAction.type === "revive") {
-                return !p.hand.some((c: Card) => c.type === "revive");
-            }
-            return true;
+      (p) => {
+        // 只有 freeze/revive 不能选自己，flip3 可以
+        if ((!pendingAction || (pendingAction.type !== "flipthree")) && p.id === selfId) return false;
+        if (p.isOut || p.skipped) return false;
+        // 复活牌目标：排除已有复活牌的玩家
+        if (pendingAction && pendingAction.type === "revive") {
+          return !p.hand.some((c: Card) => c.type === "revive");
         }
+        return true;
+      }
     );
 
     // ── 分离自己和其他玩家，按分数排序对手 ──
@@ -366,13 +852,14 @@ export function GameBoard() {
             {/* ═══ 主游戏区（竖直排列） ═══ */}
             <div className="flex-1 flex flex-col gap-1.5 min-h-0">
 
-                {/* ── 对手 1：顶部横排（6张正面，缩小间距） ── */}
+                {/* ── 对手 1：顶部横排（每行7张，居中） ── */}
                 {topOpponent && (
                     <PlayerArea
                         player={topOpponent}
                         isActive={state.currentPlayerId === topOpponent.id}
                         position="bottom"
                         cardDisplay="faceUp"
+                        cardsPerRow={7}
                         cardSize="sm"
                         avatarColor={AVATAR_COLORS[0]}
                         isTargetable={
@@ -387,7 +874,7 @@ export function GameBoard() {
                     />
                 )}
 
-                {/* ── 中间对手：并排（5张正面，缩小间距） ── */}
+                {/* ── 中间对手：并排（每行4张，居中） ── */}
                 {middleOpponents.length > 0 && (
                     <div className="flex gap-1.5">
                         {middleOpponents.map((opp, i) => (
@@ -397,6 +884,7 @@ export function GameBoard() {
                                     isActive={state.currentPlayerId === opp.id}
                                     position="bottom"
                                     cardDisplay="faceUp"
+                                    cardsPerRow={4}
                                     cardSize="xs"
                                     avatarColor={AVATAR_COLORS[(i + 1) % AVATAR_COLORS.length]}
                                     isTargetable={
@@ -417,6 +905,7 @@ export function GameBoard() {
                 {/* ── 中央：Deck + Discard ── */}
                 <div className="flex items-center justify-center gap-6 py-1.5">
                     <DeckPile
+                        ref={deckRef}
                         count={state.deck.length}
                         onClick={handleFlip}
                         isClickable={
@@ -435,7 +924,16 @@ export function GameBoard() {
                 {/* ── 回合提示 + GO/STOP（靠近玩家手牌） ── */}
                 <div className="mt-auto flex flex-col items-center gap-2 pt-2">
                     {/* 回合提示 */}
-                    {state.phase === "playing" && (
+                    {flip3State.isActive && (
+                        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold bg-cyan-500/15 text-cyan-300 ring-1 ring-cyan-400/40">
+                            <span className="w-2 h-2 rounded-full bg-cyan-300 animate-pulse" />
+                            {flip3State.byPlayer === selfId ? "你" : state.players.find((p) => p.id === flip3State.byPlayer)?.nickname ?? "玩家"}
+                            {" 对 "}
+                            {state.players.find((p) => p.id === flip3State.targetId)?.nickname ?? "目标"}
+                            {` 翻三张：第 ${flip3State.flipNumber}/3 张`}
+                        </div>
+                    )}
+                    {state.phase === "playing" && !flip3State.isActive && (
                         <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold ${
                             isMyTurn()
                                 ? "bg-[var(--pixel-gold)]/20 text-[var(--pixel-gold)] ring-1 ring-[var(--pixel-gold)]/40"
@@ -489,15 +987,28 @@ export function GameBoard() {
 
                 {/* ── 你的手牌（YOU，底部，face-up + 横向滚动） ── */}
                 {selfP && (
-                    <div className="mt-auto">
+                    <div className="mt-auto w-full px-0">
                         <PlayerArea
                             player={selfP}
                             isSelf
                             isActive={state.currentPlayerId === selfP.id}
                             position="bottom"
                             cardDisplay="faceUp"
+                            cardsPerRow={6}
                             cardSize="md"
                             avatarColor="gold"
+                            isTargetable={
+                                needsTargetSelection &&
+                                targetablePlayers.some((tp) => tp.id === selfP.id)
+                            }
+                            onSelectTarget={
+                                needsTargetSelection
+                                    ? () => handleTargetSelect(selfP.id)
+                                    : undefined
+                            }
+                            hiddenCardId={hiddenCardId}
+                            hiddenCardIds={hiddenCardIds}
+                            animatingCardId={animatingCardId}
                         />
                     </div>
                 )}
@@ -505,8 +1016,13 @@ export function GameBoard() {
 
             {/* ══════════ 翻牌动画（Motion） ══════════ */}
             <FlipCard
-                phase={flipPhase as "idle" | "showing_back" | "flipping" | "enlarged" | "entering_hand"}
+                phase={flipOwnerId !== null ? flipPhase : "idle"}
                 card={flippedCard}
+                playerName={state.players.find((p) => p.id === flipOwnerId)?.nickname}
+                round={state.roundNumber}
+                startRect={startRect}
+                endRect={endRect}
+                targetCardSize="md"
                 onSkip={handleSkipAnimation}
             />
 
@@ -570,57 +1086,91 @@ export function GameBoard() {
                 </div>
             )}
 
-            {/* ══════════ 爆牌动画 ══════════ */}
-            {flipPhase === "busted" && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-auto" onClick={handleSkipAnimation}>
-                    {preBustHand.length > 0 && (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            {preBustHand.map((card, i) => {
-                                const angle = (i / preBustHand.length) * 360;
-                                const distance = 150 + Math.random() * 50;
-                                const rotate = (Math.random() - 0.5) * 60;
-                                const delay = i * 0.05;
-                                return (
-                                    <div
-                                        key={card.id}
-                                        className="absolute rounded-lg overflow-hidden shadow-lg"
-                                        style={{
-                                            animation: `cardScatter 0.8s ease-out ${delay}s forwards`,
-                                            "--scatter-x": `${Math.cos((angle * Math.PI) / 180) * distance}px`,
-                                            "--scatter-y": `${Math.sin((angle * Math.PI) / 180) * distance}px`,
-                                            "--scatter-rotate": `${rotate}deg`,
-                                            width: "64px",
-                                            height: "96px",
-                                        } as React.CSSProperties}
-                                    >
-                                        <img
-                                            src={getCardImage(card)}
-                                            alt={`card-${card.type}`}
-                                            className="w-full h-full object-contain"
-                                            draggable={false}
-                                        />
-                                    </div>
-                                );
-                            })}
+            {/* ══════════ 爆牌动画 — 定位到爆牌玩家手牌堆中心 ══════════ */}
+            {flipPhase === "busted" && (() => {
+                const bustPlayerId = state.lastFlipPlayerId;
+                const handEl = bustPlayerId !== null
+                    ? document.querySelector(`[data-player-hand-id="${bustPlayerId}"]`) as HTMLElement | null
+                    : null;
+                const pos = handEl?.getBoundingClientRect();
+                const centerX = pos ? pos.left + pos.width / 2 : undefined;
+                const centerY = pos ? pos.top + pos.height / 2 : undefined;
+                const hasPos = centerX !== undefined && centerY !== undefined;
+
+                return (
+                    <div
+                        className="fixed z-50 pointer-events-auto"
+                        style={hasPos
+                            ? { top: centerY, left: centerX, transform: 'translate(-50%, -50%)', width: '1px', height: '1px' }
+                            : { inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }
+                        }
+                        onClick={handleSkipAnimation}
+                    >
+                        {preBustHand.length > 0 && (
+                            <div className="absolute" style={hasPos ? {} : { inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {preBustHand.map((card, i) => {
+                                    const angle = (i / preBustHand.length) * 360;
+                                    const distance = 150 + Math.random() * 50;
+                                    const rotate = (Math.random() - 0.5) * 60;
+                                    const delay = i * 0.05;
+                                    return (
+                                        <div
+                                            key={card.id}
+                                            className="absolute rounded-lg overflow-hidden shadow-lg"
+                                            style={{
+                                                animation: `cardScatter 0.8s ease-out ${delay}s forwards`,
+                                                "--scatter-x": `${Math.cos((angle * Math.PI) / 180) * distance}px`,
+                                                "--scatter-y": `${Math.sin((angle * Math.PI) / 180) * distance}px`,
+                                                "--scatter-rotate": `${rotate}deg`,
+                                                width: "64px",
+                                                height: "96px",
+                                                left: hasPos ? '-32px' : undefined,
+                                                top: hasPos ? '-48px' : undefined,
+                                            } as React.CSSProperties}
+                                        >
+                                            <img
+                                                src={getCardImage(card)}
+                                                alt={`card-${card.type}`}
+                                                className="w-full h-full object-contain"
+                                                draggable={false}
+                                            />
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        <div className="absolute text-center" style={{
+                            animation: "bustShake 0.5s ease-in-out",
+                            left: hasPos ? '-70px' : '50%',
+                            top: hasPos ? '-40px' : '50%',
+                            transform: hasPos ? undefined : 'translate(-50%, -50%)',
+                            width: hasPos ? '140px' : undefined,
+                        }}>
+                            <div className="text-6xl mb-2" style={{ animation: "bustExplode 0.8s ease-out forwards" }}>
+                                💥
+                            </div>
+                            <div
+                                className="bg-red-500/90 text-white font-bold text-xl px-4 py-2 rounded-xl shadow-2xl"
+                                style={{ animation: "bustTextAppear 0.4s ease-out 0.3s both" }}
+                            >
+                                爆牌！
+                            </div>
                         </div>
-                    )}
-                    <div className="text-center relative z-10" style={{ animation: "bustShake 0.5s ease-in-out" }}>
-                        <div className="text-8xl mb-4" style={{ animation: "bustExplode 0.8s ease-out forwards" }}>
-                            💥
-                        </div>
-                        <div
-                            className="bg-red-500/90 text-white font-bold text-2xl px-8 py-4 rounded-2xl shadow-2xl"
-                            style={{ animation: "bustTextAppear 0.4s ease-out 0.3s both" }}
-                        >
-                            爆牌！
-                        </div>
+                        <p className="absolute text-white/60 text-xs pointer-events-none"
+                            style={{
+                                animation: "bustTextAppear 0.4s ease-out 0.5s both",
+                                left: hasPos ? '-40px' : '50%',
+                                top: hasPos ? '60px' : undefined,
+                                bottom: hasPos ? undefined : '8px',
+                                transform: hasPos ? undefined : 'translateX(-50%)',
+                                width: hasPos ? '80px' : undefined,
+                                textAlign: 'center' as const,
+                            }}>
+                            点击跳过
+                        </p>
                     </div>
-                    <p className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/60 text-xs pointer-events-none"
-                        style={{ animation: "bustTextAppear 0.4s ease-out 0.5s both" }}>
-                        点击跳过
-                    </p>
-                </div>
-            )}
+                );
+            })()}
 
             {/* ══════════ 其他玩家翻牌动画 ══════════ */}
             {otherPlayerFlip && flipPhase === "idle" && !roundDisplay && (
@@ -628,7 +1178,7 @@ export function GameBoard() {
                     <div className="text-center" style={{ animation: "bounceIn 0.4s ease-out" }}>
                         <p className="text-[var(--text-secondary)] text-sm mb-2">
                             <span className="text-[var(--pixel-gold)] font-semibold">
-                                {state.players[otherPlayerFlip.playerId]?.nickname}
+                                {state.players.find((player) => player.id === otherPlayerFlip.playerId)?.nickname ?? `玩家${otherPlayerFlip.playerId}`}
                             </span>
                             {" "}翻到了
                         </p>

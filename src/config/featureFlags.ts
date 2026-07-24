@@ -7,7 +7,7 @@
 const ENABLE_SCORE_CARDS = true; // process.env.NEXT_PUBLIC_ENABLE_SCORE_CARDS === "true";
 const ENABLE_DOUBLE_CARD = true; // process.env.NEXT_PUBLIC_ENABLE_DOUBLE_CARD === "true";
 const ENABLE_FREEZE_CARD = true; // process.env.NEXT_PUBLIC_ENABLE_FREEZE_CARD === "true";
-const ENABLE_FLIPTHREE_CARD = process.env.NEXT_PUBLIC_ENABLE_FLIPTHREE_CARD === "true";
+const ENABLE_FLIPTHREE_CARD = process.env.NEXT_PUBLIC_ENABLE_FLIPTHREE_CARD !== "false";
 const ENABLE_REVIVE_CARD = true; // process.env.NEXT_PUBLIC_ENABLE_REVIVE_CARD === "true";
 
 export const FEATURE_FLAGS = {

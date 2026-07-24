@@ -26,7 +26,8 @@ export type ClientMessage =
   | { type: "new_game" }
   | { type: "request_sync"; payload: { roomCode: string; playerId?: number; token?: string } }
   | { type: "leave_room" }
-  | { type: "kick_player"; payload: { playerId: number } };
+  | { type: "kick_player"; payload: { playerId: number } }
+  | { type: "flip3_next"; payload: {} };
 
 // ====== 服务端 → 客户端 ======
 
@@ -49,7 +50,16 @@ export type ServerMessage =
   | { type: "player_busted"; payload: { playerId: number } }
   | { type: "player_stopped"; payload: { playerId: number; score: number } }
   | { type: "player_frozen"; payload: { targetId: number; byPlayer: number } }
-  | { type: "flipthree_done"; payload: { targetId: number; byPlayer: number } }
+  | { type: "flipthree_done"; payload: { targetId: number; byPlayer: number; executionResult?: any } }
+  | { type: "flip3_flip_result"; payload: { 
+      targetId: number; 
+      byPlayer: number; 
+      flipNumber: 1 | 2 | 3; 
+      card: any; 
+      result: "continue" | "bust" | "flip7"; 
+      busted?: boolean; 
+      flip7Triggered?: boolean 
+    } }
   | { type: "revive_done"; payload: { targetId: number; byPlayer: number } }
   | { type: "flip7_triggered"; payload: { playerId: number } }
   | { type: "round_ended"; payload: {} }
@@ -66,7 +76,7 @@ export type GameEvent =
   | { type: "player_busted"; playerId: number }
   | { type: "player_stopped"; playerId: number; score: number }
   | { type: "player_frozen"; targetId: number; byPlayer: number }
-  | { type: "flipthree_done"; targetId: number; byPlayer: number }
+  | { type: "flipthree_done"; targetId: number; byPlayer: number; executionResult?: any }
   | { type: "revive_done"; targetId: number; byPlayer: number }
   | { type: "flip7_triggered"; playerId: number }
   | { type: "round_ended" }

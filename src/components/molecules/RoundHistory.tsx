@@ -43,7 +43,7 @@ export function RoundHistory() {
     };
 
     const getCumulativeScore = (playerId: number) => {
-        return state.players[playerId]?.score ?? 0;
+        return state.players.find((player) => player.id === playerId)?.score ?? 0;
     };
 
     /** 获取某轮中触发七连翻的玩家 */
@@ -227,29 +227,13 @@ export function RoundHistory() {
                                                                                     ? "💥0"
                                                                                     : entry.scoreGained}
                                                                             </span>
-                                                                            {entry.scoredByFlip7 && (
-                                                                                <span className="block text-orange-400/70 text-[9px] mt-0.5">
-                                                                                    (受七连翻)
-                                                                                </span>
-                                                                            )}
+
                                                                         </div>
                                                                         {isExpanded && (
                                                                             <div className="mt-2 bg-bg-card-hover rounded-lg p-2 text-left">
                                                                                 <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-                                                                                    {entry.isBust && (
-                                                                                        <span className="text-xs bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded">💥 爆牌</span>
-                                                                                    )}
-                                                                                    {entry.isFlip7 && (
-                                                                                        <span className="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded">🎉 七连翻 触发</span>
-                                                                                    )}
-                                                                                    {entry.scoredByFlip7 && (
-                                                                                        <span className="text-xs bg-orange-500/10 text-orange-300 px-1.5 py-0.5 rounded">受七连翻影响 自动结算</span>
-                                                                                    )}
                                                                                     {entry.actions.includes("freeze") && (
                                                                                         <span className="text-xs bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded">❄️ 冻结结算</span>
-                                                                                    )}
-                                                                                    {!entry.isBust && !entry.isFlip7 && !entry.scoredByFlip7 && !entry.actions.includes("freeze") && entry.actions.includes("stop") && (
-                                                                                        <span className="text-xs bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded">✓ 结算</span>
                                                                                     )}
                                                                                 </div>
                                                                                 {entry.flippedCards && entry.flippedCards.length > 0 ? (

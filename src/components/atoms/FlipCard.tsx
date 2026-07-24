@@ -1,108 +1,295 @@
 "use client";
 
-import { motion, AnimatePresence } from "motion/react";
+import { useMemo, useEffect, useState } from "react";
+import { motion } from "motion/react";
 import type { Card } from "@/types";
 import { getCardImage } from "@/utils";
+import { CardBackFace } from "./GameCard";
+
+export type FlipPhase =
+  | "idle"
+  | "showing_back"
+  | "enlarged"
+  | "flipping"
+  | "entering_hand"
+  | "busted"
+  | "flip7";
 
 interface FlipCardProps {
-    /** 当前阶段 */
-    phase: "idle" | "showing_back" | "flipping" | "enlarged" | "entering_hand";
-    card: Card | null;
-    /** 点击跳过 */
-    onSkip?: () => void;
+  /** 当前阶段 */
+  phase: FlipPhase;
+  card: Card | null;
+  /** 当前玩家名 */
+  playerName?: string;
+  /** 当前回合号 */
+  round?: number;
+  /** 动画起点：牌堆 DOMRect */
+  startRect?: DOMRect | null;
+  /** 动画终点：手牌区 DOMRect */
+  endRect?: DOMRect | null;
+  /** 目标手牌尺寸 */
+  targetCardSize?: "xs" | "sm" | "md" | "lg";
+  /** 点击跳过 */
+  onSkip?: () => void;
+  onAnimationComplete?: () => void;
 }
+
+const sizeMap = {
+  xs: 44,
+  sm: 52,
+  md: 64,
+  lg: 80,
+};
 
 /**
  * 卡牌翻转动画组件
  *
- * 修复：使用 opacity + scale 动画代替 3D rotateY，
- * 避免图片在 rotateY(180) 时被镜像反转的问题。
+ * 动画流程（总时长约 2.0s）：
+ * 1. showing_back (0.35s): 从牌堆位置飞到屏幕中央并放大
+ * 2. enlarged    (0.65s): 牌背在中央停留并轻微弹跳
+ * 3. flipping    (0.5s): 3D 水平翻转并展示牌面
+ * 4. entering_hand (0.5s): 缩小并飞向手牌区
+ *
+ * 3D 翻转：正面预旋转 180deg，容器 rotateY 0→180
  */
-export function FlipCard({ phase, card, onSkip }: FlipCardProps) {
-    if (phase === "idle") return null;
+export function FlipCard({
+  phase,
+  card,
+  playerName,
+  round,
+  startRect,
+  endRect,
+  targetCardSize = "md",
+  onSkip,
+  onAnimationComplete,
+}: FlipCardProps) {
+  const [reducedMotion, setReducedMotion] = useState(false);
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-            <AnimatePresence mode="wait">
-                {/* 阶段 1：牌背滑入 */}
-                {phase === "showing_back" && (
-                    <motion.div
-                        key="showing_back"
-                        className="w-24 h-32 rounded-xl overflow-hidden shadow-2xl"
-                        initial={{ y: 100, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        exit={{ y: 0, opacity: 0 }}
-                        transition={{ duration: 0.2, ease: "easeOut" }}
-                    >
-                        <img
-                            src="/images/card_back.jpg"
-                            alt="card-back"
-                            className="w-full h-full object-contain"
-                            draggable={false}
-                        />
-                    </motion.div>
-                )}
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(media.matches);
+    update();
+    media.addEventListener?.("change", update);
+    return () => media.removeEventListener?.("change", update);
+  }, []);
 
-                {/* 阶段 2：翻面 — 使用 opacity + scale 切换牌面，避免镜像 */}
-                {phase === "flipping" && card && (
-                    <motion.div
-                        key="flipping"
-                        className="w-24 h-32 rounded-xl overflow-hidden shadow-2xl"
-                        initial={{ scaleX: 0.1, opacity: 0.5 }}
-                        animate={{ scaleX: 1, opacity: 1 }}
-                        exit={{ scaleX: 1.2, opacity: 0 }}
-                        transition={{ duration: 0.25, ease: "easeOut" }}
-                    >
-                        <img
-                            src={getCardImage(card)}
-                            alt={`card-${card.type}`}
-                            className="w-full h-full object-contain"
-                            draggable={false}
-                        />
-                    </motion.div>
-                )}
+  const geometry = useMemo(() => {
+    if (typeof window === "undefined") return null;
 
-                {/* 阶段 3：放大到 300% */}
-                {phase === "enlarged" && card && (
-                    <motion.div
-                        key="enlarged"
-                        className="w-24 h-32 rounded-xl overflow-hidden shadow-2xl pointer-events-auto cursor-pointer"
-                        initial={{ scale: 1 }}
-                        animate={{ scale: 3 }}
-                        transition={{
-                            type: "spring",
-                            stiffness: 200,
-                            damping: 15,
-                        }}
-                        onClick={onSkip}
-                    >
-                        <img
-                            src={getCardImage(card)}
-                            alt={`card-${card.type}`}
-                            className="w-full h-full object-contain"
-                            draggable={false}
-                        />
-                    </motion.div>
-                )}
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const centerX = vw / 2;
+    const centerY = vh / 2;
 
-                {/* 阶段 4：飞入手牌 */}
-                {phase === "entering_hand" && card && (
-                    <motion.div
-                        key="entering_hand"
-                        className="w-24 h-32 rounded-xl overflow-hidden shadow-2xl"
-                        initial={{ scale: 3, y: 0, opacity: 1 }}
-                        animate={{ scale: 0.3, y: 200, opacity: 0 }}
-                        transition={{ duration: 0.4, ease: "easeIn" }}
-                    >
-                        <img
-                            src={getCardImage(card)}
-                            alt={`card-${card.type}`}
-                            className="w-full h-full object-contain"
-                            draggable={false}
-                        />
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
+    // 响应式基础尺寸
+    const isMobile = vw < 640;
+    const baseW = isMobile ? 80 : 96;
+    const baseH = isMobile ? 112 : 128;
+
+    const safeStartRect = startRect ?? new DOMRect(centerX - baseW / 2, centerY - baseH / 2, baseW, baseH);
+    const startX = safeStartRect.left + safeStartRect.width / 2 - centerX;
+    const startY = safeStartRect.top + safeStartRect.height / 2 - centerY;
+    const startScale = Math.max(0.5, safeStartRect.width / baseW);
+
+    // 中央展示缩放：最大 1.4，且不超出屏幕安全区
+    const centerScale = Math.min(
+      1.4,
+      (vw - 32) / baseW,
+      (vh * 0.5) / baseH,
+      1.4
     );
+
+    // 终点：手牌区中心，若未提供则默认屏幕下方
+    let endX = 0;
+    let endY = vh * 0.35;
+    let endScale = sizeMap[targetCardSize] / baseW;
+
+    if (endRect) {
+      endX = endRect.left + endRect.width / 2 - centerX;
+      endY = endRect.top + endRect.height / 2 - centerY;
+    }
+
+    return {
+      baseW,
+      baseH,
+      startX,
+      startY,
+      startScale,
+      centerScale,
+      endX,
+      endY,
+      endScale,
+    };
+  }, [startRect, endRect, targetCardSize]);
+
+  const { animate, transition, initial } = useMemo(() => {
+    if (!geometry) {
+      return {
+        initial: { x: 0, y: 0, scale: 1, rotateY: 0, opacity: 1 },
+        animate: { x: 0, y: 0, scale: 1, rotateY: 0, opacity: 1 },
+        transition: { duration: 0 },
+      };
+    }
+
+    if (reducedMotion) {
+      return {
+        initial: { x: 0, y: 0, scale: 1, rotateY: 180, opacity: 1 },
+        animate: { x: 0, y: 0, scale: 1, rotateY: 180, opacity: 1 },
+        transition: { duration: 0 },
+      };
+    }
+
+    const {
+      startX,
+      startY,
+      startScale,
+      centerScale,
+      endX,
+      endY,
+      endScale,
+    } = geometry;
+
+    const initialState = {
+      x: startX,
+      y: startY,
+      scale: startScale,
+      rotateY: 0,
+      opacity: 1,
+    };
+
+    switch (phase) {
+      case "showing_back":
+        return {
+          initial: initialState,
+          animate: { x: 0, y: 0, scale: centerScale, rotateY: 0, opacity: 1 },
+          transition: { duration: 0.2, ease: "easeOut" as const },
+        };
+      case "enlarged":
+        return {
+          initial: initialState,
+          animate: {
+            x: 0,
+            y: 0,
+            scale: [centerScale, centerScale * 1.1, centerScale * 1.08],
+            rotateY: 0,
+            opacity: 1,
+          },
+          transition: {
+            duration: 0.65,
+            times: [0, 0.55, 1],
+            ease: "easeInOut" as const,
+          },
+        };
+      case "flipping":
+        return {
+          initial: initialState,
+          animate: {
+            x: 0,
+            y: 0,
+            scale: centerScale,
+            rotateY: [0, 180, 180],
+            opacity: 1,
+          },
+          transition: {
+            duration: 0.3,
+            times: [0, 0.33, 1],
+            ease: "easeInOut" as const,
+          },
+        };
+      case "entering_hand":
+        return {
+          initial: initialState,
+          animate: {
+            x: endX,
+            y: endY,
+            scale: endScale,
+            rotateY: 180,
+            opacity: 0,
+          },
+          transition: { duration: 0.3, ease: "easeInOut" as const },
+        };
+      default:
+        return {
+          initial: initialState,
+          animate: initialState,
+          transition: { duration: 0 },
+        };
+    }
+  }, [phase, geometry, reducedMotion]);
+
+  if (phase === "idle" || phase === "busted" || phase === "flip7") return null;
+  if (!geometry) return null;
+
+  const { baseW, baseH } = geometry;
+  const showFront = phase === "flipping" || phase === "entering_hand";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+      {/* 玩家名 + 回合号 HUD */}
+      <div
+        className="absolute top-[12%] left-1/2 -translate-x-1/2 text-center pointer-events-none"
+        style={{ zIndex: 60 }}
+      >
+        {typeof round === "number" && (
+          <div className="text-xs text-[var(--text-secondary)] mb-0.5">
+            第 {round} 回合
+          </div>
+        )}
+        {playerName && (
+          <div className="text-sm font-bold text-[var(--pixel-gold)]">
+            {playerName}
+          </div>
+        )}
+      </div>
+
+      {/* 卡牌本体 */}
+      <motion.div
+        className="flip-card-motion relative pointer-events-auto"
+        style={{
+          width: baseW,
+          height: baseH,
+          transformStyle: "preserve-3d",
+          perspective: 1200,
+        }}
+        initial={initial}
+        animate={animate}
+        transition={transition}
+        onClick={onSkip}
+        onAnimationComplete={onAnimationComplete}
+      >
+        {/* 背面：rotateY 0deg 时可见 */}
+        <div
+          className="absolute inset-0 backface-hidden rounded-xl overflow-hidden"
+          style={{ transform: "rotateY(0deg)" }}
+        >
+          <CardBackFace className="rounded-xl" />
+        </div>
+
+        {/* 正面：预旋转 180deg，容器 rotateY 180deg 时正向显示 */}
+        <div
+          className="absolute inset-0 backface-hidden rounded-xl overflow-hidden"
+          style={{ transform: "rotateY(180deg)" }}
+        >
+          {showFront && card ? (
+            <img
+              src={getCardImage(card)}
+              alt={`card-${card.type}`}
+              className="w-full h-full object-contain rounded-xl"
+              draggable={false}
+            />
+          ) : (
+            <CardBackFace className="rounded-xl" />
+          )}
+        </div>
+      </motion.div>
+
+      {/* 跳过提示 */}
+      <div
+        className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/50 text-xs pointer-events-none"
+        style={{ zIndex: 60 }}
+      >
+        点击跳过
+      </div>
+    </div>
+  );
 }

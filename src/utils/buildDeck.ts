@@ -42,7 +42,7 @@ export function buildDeck(): Card[] {
       { value: "+10", effect: 10 },
     ];
     for (const sc of scoreEffects) {
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 1; i++) {
         cards.push({
           type: "score",
           value: sc.value,
@@ -54,7 +54,7 @@ export function buildDeck(): Card[] {
   }
 
   if (FEATURE_FLAGS.ENABLE_DOUBLE_CARD) {
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 1; i++) {
       cards.push({
         type: "double",
         value: "x2",
@@ -66,7 +66,7 @@ export function buildDeck(): Card[] {
 
   // ── 行动牌（Feature Flag 控制） ──
   if (FEATURE_FLAGS.ENABLE_FREEZE_CARD) {
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 3; i++) {
       cards.push({
         type: "freeze",
         value: "freeze",
@@ -89,7 +89,7 @@ export function buildDeck(): Card[] {
 
   // ── 功能牌（Feature Flag 控制） ──
   if (FEATURE_FLAGS.ENABLE_REVIVE_CARD) {
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 3; i++) {
       cards.push({
         type: "revive",
         value: "revive",

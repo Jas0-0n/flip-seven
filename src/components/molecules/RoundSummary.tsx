@@ -14,12 +14,15 @@ export function RoundSummary() {
     const [show, setShow] = useState(false);
     const [roundData, setRoundData] = useState<{
         round: number;
+        flip7WinnerId?: number;
         entries: Array<{
+            id: string;
             playerId: number;
             nickname: string;
             scoreGained: number;
             isBust: boolean;
             isFlip7: boolean;
+            scoredByFlip7?: boolean;
             flippedCards?: Card[];
             triggerCard?: Card;
         }>;
@@ -33,15 +36,35 @@ export function RoundSummary() {
         const currentRound = state.roundNumber;
 
         if (lastRound && lastRound < currentRound && state.phase === "playing") {
-            // 获取上一轮的所有记录
+            // 同一玩家同一轮可能因 flip3/Flip7 等连续流程产生多条 history，
+            // 结算弹窗按玩家合并，避免同一玩家显示多次。
             const prevRoundEntries = state.history.filter((h) => h.round === lastRound);
+            const mergedEntries = Array.from(
+                prevRoundEntries.reduce((map, entry) => {
+                    const existing = map.get(entry.playerId);
+                    if (!existing) {
+                        map.set(entry.playerId, { ...entry });
+                        return map;
+                    }
+                    existing.actions = Array.from(new Set([...existing.actions, ...entry.actions]));
+                    existing.scoreGained += entry.scoreGained;
+                    existing.isBust = existing.isBust || entry.isBust;
+                    existing.isFlip7 = existing.isFlip7 || entry.isFlip7;
+                    existing.isRevive = existing.isRevive || entry.isRevive;
+                    existing.scoredByFlip7 = existing.scoredByFlip7 || entry.scoredByFlip7 || entry.actions.includes("stop");
+                    existing.flippedCards = [...(existing.flippedCards ?? []), ...(entry.flippedCards ?? [])];
+                    existing.triggerCard = entry.triggerCard ?? existing.triggerCard;
+                    return map;
+                }, new Map<number, typeof prevRoundEntries[number]>()).values()
+            );
 
-            if (prevRoundEntries.length > 0) {
+            if (mergedEntries.length > 0) {
                 setRoundData({
                     round: lastRound,
-                    entries: prevRoundEntries.map((e) => ({
+                    entries: mergedEntries.map((e) => ({
+                        id: `${lastRound}-${e.playerId}`,
                         playerId: e.playerId,
-                        nickname: state.players[e.playerId]?.nickname ?? "???",
+                        nickname: state.players.find((player) => player.id === e.playerId)?.nickname ?? "???",
                         scoreGained: e.scoreGained,
                         isBust: e.isBust,
                         isFlip7: e.isFlip7,
@@ -69,7 +92,7 @@ export function RoundSummary() {
                 <div className="space-y-3">
                     {roundData.entries.map((entry) => (
                         <div
-                            key={entry.playerId}
+                            key={entry.id}
                             className="bg-bg-card-hover rounded-xl p-3"
                         >
                             {/* 玩家信息 + 得分 */}
@@ -79,8 +102,11 @@ export function RoundSummary() {
                                     {entry.isBust && (
                                         <span className="text-red-400 text-xs">💥爆牌</span>
                                     )}
-                                    {entry.isFlip7 && (
-                                        <span className="text-yellow-400 text-xs">🎉七连翻</span>
+                                    {entry.isFlip7 && roundData.flip7WinnerId === entry.playerId && (
+                                        <span className="text-yellow-400 text-xs">🎉七连翻胜利</span>
+                                    )}
+                                    {entry.scoredByFlip7 && roundData.flip7WinnerId !== entry.playerId && (
+                                        <span className="text-cyan-400 text-xs">✨被七连翻结算</span>
                                     )}
                                 </div>
                                 <span
@@ -99,31 +125,36 @@ export function RoundSummary() {
                             {/* 翻牌记录 */}
                             {entry.flippedCards && entry.flippedCards.length > 0 && (
                                 <div className="mt-2">
-                                    <p className="text-text-muted text-xs mb-1.5">翻牌记录：</p>
+                                    <p className="text-text-muted text-xs mb-1.5">
+                                        {entry.playerId === roundData.flip7WinnerId ? "本回合翻牌记录：" : "翻牌记录："}
+                                    </p>
                                     <div className="flex flex-wrap gap-1">
-                                        {entry.flippedCards.map((card, j) => (
-                                            <div
-                                                key={j}
-                                                className={`w-8 h-11 rounded overflow-hidden shadow ${
-                                                    entry.isBust && j === entry.flippedCards!.length - 1
-                                                        ? "ring-2 ring-red-500"
-                                                        : ""
-                                                }`}
-                                            >
-                                                <img
-                                                    src={getCardImage(card)}
-                                                    alt={`card-${card.type}`}
-                                                    className="w-full h-full object-contain"
-                                                    draggable={false}
-                                                />
-                                            </div>
-                                        ))}
+                                        {entry.flippedCards.map((card, j) => {
+                                            const isBustCard = entry.isBust && j === entry.flippedCards!.length - 1;
+                                            return (
+                                                <div
+                                                    key={`${entry.id}-${card.id ?? j}-${j}`}
+                                                    className={`relative w-8 h-11 rounded overflow-hidden shadow ${
+                                                        isBustCard ? "ring-2 ring-red-500" : ""
+                                                    }`}
+                                                >
+                                                    <img
+                                                        src={getCardImage(card)}
+                                                        alt={`card-${card.type}`}
+                                                        className="w-full h-full object-contain"
+                                                        draggable={false}
+                                                    />
+                                                    {isBustCard && entry.triggerCard && (
+                                                        <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                                                            <span className="text-red-500 text-[10px] font-bold drop-shadow">
+                                                                {entry.triggerCard.value}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
                                     </div>
-                                    {entry.triggerCard && entry.isBust && (
-                                        <p className="text-red-400 text-xs mt-1">
-                                            翻到重复数字 {entry.triggerCard.value}，爆牌！
-                                        </p>
-                                    )}
                                 </div>
                             )}
                         </div>
